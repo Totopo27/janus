@@ -129,6 +129,7 @@ class Meeting:
     title: str
     speaker_a: SpeakerProfile
     speaker_b: SpeakerProfile
+    topic_key: Optional[str] = None
     turns: List[ConversationTurn] = field(default_factory=list)
     summary: Optional[MeetingSummary] = None
     status: str = "active"  # "active" | "completed"
@@ -149,4 +150,26 @@ class Meeting:
         if self.speaker_b.speaker_id == speaker_id:
             return self.speaker_b
         return None
+
+
+@dataclass
+class SearchResult:
+    """A search hit from full-text search across meetings and turns."""
+    meeting_id: str
+    turn_id: str
+    speaker_id: str
+    original_text: str
+    translated_text: str
+    snippet: str
+    topic_key: Optional[str] = None
+    created_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class ChatMessage:
+    """A single turn in an interactive chat session with an AI model."""
+    role: str  # "system" | "user" | "assistant"
+    content: str
+    timestamp: float = field(default_factory=time.time)
+
 

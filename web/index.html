@@ -10,9 +10,12 @@
   <header>
     <div class="logo">
       <span>🎭 Janus</span>
-      <span style="font-size: 0.8rem; font-weight: normal; opacity: 0.8;">Local-First S2ST</span>
+      <span style="font-size: 0.8rem; font-weight: normal; opacity: 0.8;">Local-First S2ST & BYOM</span>
     </div>
-    <div style="display: flex; gap: 1rem; align-items: center;">
+    <div style="display: flex; gap: 0.8rem; align-items: center;">
+      <button id="openSearchBtn" class="btn-search">
+        🔍 Buscar en Historial (FTS5)
+      </button>
       <button id="finalizeBtn" class="btn-finalize">
         📋 Finalizar y Minuta (Zoom Style)
       </button>
@@ -24,6 +27,27 @@
   </header>
 
   <main>
+    <!-- Selector de Escenario de Audio -->
+    <div class="scenario-bar">
+      <div class="scenario-options">
+        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-right: 0.5rem;">ESCENARIO:</span>
+        <label class="scenario-label active" id="scenarioInPersonLabel">
+          <input type="radio" name="audioScenario" id="scenarioInPerson" value="in-person" checked />
+          <span>📱 Presencial / Móvil (Micrófono Único)</span>
+        </label>
+        <label class="scenario-label" id="scenarioVideocallLabel">
+          <input type="radio" name="audioScenario" id="scenarioVideocall" value="videocall" />
+          <span>💻 Videollamada (Doble Canal: Micrófono + Zoom/Meet)</span>
+        </label>
+      </div>
+      <div id="videocallControls" style="display: none; align-items: center; gap: 0.5rem;">
+        <button id="connectMeetAudioBtn" class="btn-videocall">
+          📺 Capturar Audio de Reunión (Pestaña)
+        </button>
+        <span id="meetAudioStatus" style="font-size: 0.8rem; color: var(--text-muted);">Inactivo</span>
+      </div>
+    </div>
+
     <div class="session-bar">
       <div class="session-info">
         <div class="speaker-badge badge-a">
@@ -67,9 +91,29 @@
     </div>
   </main>
 
-  <!-- Modal de Minuta de Reunión Estilo Zoom -->
+  <!-- Modal de Búsqueda Histórica FTS5 -->
+  <div id="searchModal" class="modal-backdrop" style="display: none;">
+    <div class="modal-content" style="max-width: 750px;">
+      <div class="modal-header">
+        <h2>🔍 Búsqueda Histórica en Memoria (SQLite FTS5)</h2>
+        <button id="closeSearchModalBtn" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
+          <input type="text" id="searchQueryInput" placeholder="Escribe para buscar términos, acuerdos o frases..." style="flex: 1; padding: 0.7rem 1rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 0.95rem;" />
+          <input type="text" id="searchTopicInput" placeholder="Tema (opcional, ej: proyectos/janus)" style="width: 220px; padding: 0.7rem 1rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 0.95rem;" />
+          <button id="executeSearchBtn" class="btn-primary" style="padding: 0.7rem 1.2rem;">Buscar</button>
+        </div>
+        <div id="searchResultsList" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.8rem;">
+          <div style="text-align: center; color: var(--text-muted); padding: 2rem;">Ingresá un término para buscar en todas las reuniones pasadas.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal de Minuta de Reunión Estilo Zoom con Chat de IA (BYOM) -->
   <div id="notesModal" class="modal-backdrop" style="display: none;">
-    <div class="modal-content">
+    <div class="modal-content" style="max-width: 850px;">
       <div class="modal-header">
         <h2>📋 Minuta de Reunión (Zoom AI Companion Style)</h2>
         <button id="closeModalBtn" class="btn-close">&times;</button>
@@ -88,6 +132,27 @@
         <div class="notes-section">
           <h3>✅ Compromisos y Tareas (Action Items)</h3>
           <ul id="modalActionItems" style="list-style: none; padding-left: 0; display: flex; flex-direction: column; gap: 0.5rem;"></ul>
+        </div>
+
+        <!-- Sección BYOM: Preguntarle a la IA -->
+        <div class="notes-section" style="background: rgba(15, 23, 42, 0.6); padding: 1.2rem; border-radius: 8px; border: 1px solid var(--border-color);">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
+            <h3>🤖 Preguntarle a la IA sobre esta reunión</h3>
+            <div style="display: flex; align-items: center; gap: 0.5rem;">
+              <span style="font-size: 0.8rem; color: var(--text-muted);">Proveedor:</span>
+              <select id="modalAiProvider" style="background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: 0.85rem;">
+                <option value="ollama">Ollama (100% Local / qwen2.5:3b)</option>
+                <option value="gemini">Google Gemini (Cloud)</option>
+              </select>
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem;">
+            <input type="text" id="modalAiQuestionInput" placeholder="Ej: ¿Cuáles son las tareas asignadas a Carlos?..." style="flex: 1; padding: 0.6rem 0.9rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.9rem;" />
+            <button id="modalAiAskBtn" class="btn-primary" style="padding: 0.6rem 1rem;">Preguntar</button>
+          </div>
+          <div id="modalAiAnswerBox" style="display: none; padding: 0.8rem; background: var(--bg-color); border-radius: 6px; border: 1px solid var(--border-color); font-size: 0.9rem; line-height: 1.5; color: var(--text-main);">
+            <div id="modalAiAnswerText"></div>
+          </div>
         </div>
       </div>
       <div class="modal-footer">

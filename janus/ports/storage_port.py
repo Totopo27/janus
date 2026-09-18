@@ -1,6 +1,6 @@
 from abc import ABC, abstractmethod
 from typing import List, Optional
-from janus.domain.models import Meeting, ConversationTurn, MeetingSummary
+from janus.domain.models import Meeting, ConversationTurn, MeetingSummary, SearchResult
 
 
 class IMeetingRepository(ABC):
@@ -35,3 +35,9 @@ class IMeetingRepository(ABC):
     def delete_meeting(self, meeting_id: str) -> bool:
         """Removes a meeting record and its associated turns."""
         pass
+
+    @abstractmethod
+    def search_turns(self, query: str, topic_key: Optional[str] = None) -> List[SearchResult]:
+        """Performs full-text search across dialogue turns with optional topic_key filtering."""
+        pass
+

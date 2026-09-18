@@ -8,12 +8,15 @@ from janus.api.websockets import create_websocket_router
 from janus.services.session_service import SessionService
 from janus.services.pipeline_orchestrator import PipelineOrchestrator
 from janus.services.meeting_notes_service import MeetingNotesService
+from janus.services.meeting_chat_service import MeetingChatService
+from janus.adapters.llm.factory import LLMProviderFactory
 from janus.adapters.storage.sqlite_repository import SqliteMeetingRepository
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
 from janus.adapters.stt.sherpa_stt_adapter import SherpaSttAdapter
 from janus.adapters.translation.marian_translator import MarianTranslator
 from janus.adapters.tts.supertonic_tts_adapter import SupertonicTtsAdapter
 from janus.ports.storage_port import IMeetingRepository
+from janus.ports.llm_port import ILLMProvider
 
 
 def create_app(
@@ -22,13 +25,15 @@ def create_app(
     broadcaster: WebSocketBroadcaster = None,
     meeting_repo: IMeetingRepository = None,
     notes_service: MeetingNotesService = None,
+    chat_service: MeetingChatService = None,
+    llm_provider: ILLMProvider = None,
     db_path: str = "janus.db",
 ) -> FastAPI:
     """Factory creating and configuring the Janus FastAPI application."""
     app = FastAPI(
         title="Janus S2ST Platform",
-        description="Local-First On-Device Speech-to-Speech Translation & Live Teleprompter with Zoom-style Meeting Notes",
-        version="0.1.0",
+        description="Local-First On-Device Speech-to-Speech Translation & Live Teleprompter with Zoom-style Meeting Notes & BYOM",
+        version="0.2.0",
     )
 
     app.add_middleware(
@@ -44,6 +49,13 @@ def create_app(
         meeting_repo = SqliteMeetingRepository(db_path=db_path)
     if notes_service is None:
         notes_service = MeetingNotesService(repository=meeting_repo)
+
+    # Initialize BYOM & Chat service
+    llm_factory = LLMProviderFactory()
+    if llm_provider is None:
+        llm_provider = llm_factory.create("ollama")
+    if chat_service is None:
+        chat_service = MeetingChatService(repository=meeting_repo, llm_provider=llm_provider)
 
     # Initialize default services if not injected
     if broadcaster is None:
@@ -65,7 +77,7 @@ def create_app(
     # Health check
     @app.get("/health", tags=["System"])
     def health_check():
-        return {"status": "ok", "app": "Janus", "version": "0.1.0"}
+        return {"status": "ok", "app": "Janus", "version": "0.2.0"}
 
     # Include REST API & WebSockets
     app.include_router(
@@ -73,6 +85,8 @@ def create_app(
             session_service=session_service,
             meeting_repo=meeting_repo,
             notes_service=notes_service,
+            chat_service=chat_service,
+            llm_factory=llm_factory,
         )
     )
     app.include_router(
@@ -82,6 +96,7 @@ def create_app(
             broadcaster=broadcaster,
         )
     )
+
 
     # Serve static Web UI if directory exists
     web_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web")

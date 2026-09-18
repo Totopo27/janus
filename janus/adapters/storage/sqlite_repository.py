@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 import sqlite3
 import time
 from typing import List, Optional
@@ -11,6 +12,7 @@ from janus.domain.models import (
     TranslationResult,
     MeetingSummary,
     ActionItem,
+    SearchResult,
 )
 from janus.ports.storage_port import IMeetingRepository
 
@@ -20,7 +22,8 @@ logger = logging.getLogger(__name__)
 class SqliteMeetingRepository(IMeetingRepository):
     """
     Local-first SQLite repository implementing persistent storage
-    for meetings, dialogue turns, speaker profiles, and Zoom-style meeting notes.
+    for meetings, dialogue turns, speaker profiles, and Zoom-style meeting notes,
+    with FTS5 full-text search and hierarchical topic_key indexing.
     """
 
     def __init__(self, db_path: str = "janus.db") -> None:
@@ -40,6 +43,7 @@ class SqliteMeetingRepository(IMeetingRepository):
                 CREATE TABLE IF NOT EXISTS meetings (
                     meeting_id TEXT PRIMARY KEY,
                     title TEXT NOT NULL,
+                    topic_key TEXT,
                     speaker_a_id TEXT NOT NULL,
                     speaker_a_name TEXT NOT NULL,
                     speaker_a_lang TEXT NOT NULL,
@@ -89,24 +93,57 @@ class SqliteMeetingRepository(IMeetingRepository):
 
                 CREATE INDEX IF NOT EXISTS idx_turns_meeting_id ON turns(meeting_id);
                 CREATE INDEX IF NOT EXISTS idx_action_items_meeting_id ON action_items(meeting_id);
+
+                CREATE VIRTUAL TABLE IF NOT EXISTS turns_fts USING fts5(
+                    turn_id UNINDEXED,
+                    meeting_id UNINDEXED,
+                    speaker_id UNINDEXED,
+                    original_text,
+                    translated_text,
+                    tokenize='unicode61 remove_diacritics 2'
+                );
+
+                CREATE TRIGGER IF NOT EXISTS trg_turns_ai AFTER INSERT ON turns BEGIN
+                    INSERT INTO turns_fts(turn_id, meeting_id, speaker_id, original_text, translated_text)
+                    VALUES (new.turn_id, new.meeting_id, new.speaker_id, new.original_text, new.translated_text);
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS trg_turns_ad AFTER DELETE ON turns BEGIN
+                    DELETE FROM turns_fts WHERE turn_id = old.turn_id;
+                END;
+
+                CREATE TRIGGER IF NOT EXISTS trg_turns_au AFTER UPDATE ON turns BEGIN
+                    UPDATE turns_fts SET
+                        original_text = new.original_text,
+                        translated_text = new.translated_text
+                    WHERE turn_id = old.turn_id;
+                END;
             """)
+
+            # Migration for existing DBs: verify topic_key column exists
+            pragma_cursor = conn.execute("PRAGMA table_info(meetings)")
+            cols = [row[1] for row in pragma_cursor.fetchall()]
+            if cols and "topic_key" not in cols:
+                conn.execute("ALTER TABLE meetings ADD COLUMN topic_key TEXT;")
 
     def save_meeting(self, meeting: Meeting) -> None:
         with self._get_connection() as conn:
             conn.execute("""
                 INSERT INTO meetings (
-                    meeting_id, title,
+                    meeting_id, title, topic_key,
                     speaker_a_id, speaker_a_name, speaker_a_lang, speaker_a_voice,
                     speaker_b_id, speaker_b_name, speaker_b_lang, speaker_b_voice,
                     status, created_at, ended_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(meeting_id) DO UPDATE SET
                     title=excluded.title,
+                    topic_key=excluded.topic_key,
                     status=excluded.status,
                     ended_at=excluded.ended_at
             """, (
                 meeting.meeting_id,
                 meeting.title,
+                meeting.topic_key,
                 meeting.speaker_a.speaker_id,
                 meeting.speaker_a.name,
                 meeting.speaker_a.native_language,
@@ -119,6 +156,7 @@ class SqliteMeetingRepository(IMeetingRepository):
                 meeting.created_at,
                 meeting.ended_at,
             ))
+
 
     def save_turn(self, meeting_id: str, turn: ConversationTurn) -> None:
         with self._get_connection() as conn:
@@ -252,6 +290,7 @@ class SqliteMeetingRepository(IMeetingRepository):
                 title=m_row["title"],
                 speaker_a=speaker_a,
                 speaker_b=speaker_b,
+                topic_key=m_row["topic_key"] if "topic_key" in m_row.keys() else None,
                 turns=turns,
                 summary=summary,
                 status=m_row["status"],
@@ -273,3 +312,60 @@ class SqliteMeetingRepository(IMeetingRepository):
         with self._get_connection() as conn:
             cursor = conn.execute("DELETE FROM meetings WHERE meeting_id = ?", (meeting_id,))
             return cursor.rowcount > 0
+
+    def search_turns(self, query: str, topic_key: Optional[str] = None) -> List[SearchResult]:
+        if not query or not query.strip():
+            return []
+
+        # Extract words for safe prefix matching in FTS5
+        words = re.findall(r"\w+", query, re.UNICODE)
+        if not words:
+            return []
+
+        fts_query = " ".join(f'"{w}"*' for w in words)
+
+        sql = """
+            SELECT
+                t.turn_id,
+                t.meeting_id,
+                t.speaker_id,
+                t.original_text,
+                t.translated_text,
+                snippet(turns_fts, -1, '<b>', '</b>', '...', 15) AS snippet_text,
+                m.topic_key,
+                t.created_at
+            FROM turns_fts f
+            JOIN turns t ON t.turn_id = f.turn_id
+            JOIN meetings m ON m.meeting_id = f.meeting_id
+            WHERE turns_fts MATCH ?
+        """
+        params = [fts_query]
+
+        if topic_key and topic_key.strip():
+            cleaned_topic = topic_key.strip()
+            sql += " AND (m.topic_key = ? OR m.topic_key LIKE ?)"
+            params.extend([cleaned_topic, f"{cleaned_topic}/%"])
+
+        sql += " ORDER BY rank, t.created_at DESC LIMIT 50"
+
+        with self._get_connection() as conn:
+            try:
+                rows = conn.execute(sql, params).fetchall()
+            except sqlite3.OperationalError as e:
+                logger.warning("FTS search error: %s", e)
+                return []
+
+            return [
+                SearchResult(
+                    meeting_id=r["meeting_id"],
+                    turn_id=r["turn_id"],
+                    speaker_id=r["speaker_id"],
+                    original_text=r["original_text"],
+                    translated_text=r["translated_text"],
+                    snippet=r["snippet_text"],
+                    topic_key=r["topic_key"],
+                    created_at=r["created_at"],
+                )
+                for r in rows
+            ]
+

@@ -1,9 +1,11 @@
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
-from janus.domain.models import SpeakerProfile, Meeting
+from janus.domain.models import SpeakerProfile, Meeting, ChatMessage, SearchResult
 from janus.services.session_service import SessionService
 from janus.services.meeting_notes_service import MeetingNotesService
+from janus.services.meeting_chat_service import MeetingChatService
+from janus.adapters.llm.factory import LLMProviderFactory
 from janus.ports.storage_port import IMeetingRepository
 
 
@@ -31,6 +33,7 @@ class SessionResponse(BaseModel):
 class CreateMeetingRequest(BaseModel):
     meeting_id: str = Field(..., description="Unique meeting identifier")
     title: str = Field(..., description="Meeting topic or title")
+    topic_key: Optional[str] = Field(None, description="Hierarchical topic key inspired by Engram (e.g. proyectos/janus)")
     speaker_a: SpeakerProfileSchema
     speaker_b: SpeakerProfileSchema
 
@@ -52,6 +55,7 @@ class MeetingSummarySchema(BaseModel):
 class MeetingResponse(BaseModel):
     meeting_id: str
     title: str
+    topic_key: Optional[str] = None
     speaker_a: SpeakerProfileSchema
     speaker_b: SpeakerProfileSchema
     status: str
@@ -61,12 +65,50 @@ class MeetingResponse(BaseModel):
     summary: Optional[MeetingSummarySchema] = None
 
 
+class SearchResultSchema(BaseModel):
+    meeting_id: str
+    turn_id: str
+    speaker_id: str
+    original_text: str
+    translated_text: str
+    snippet: str
+    topic_key: Optional[str] = None
+    created_at: float
+
+
+class MeetingChatRequest(BaseModel):
+    question: str
+    history: Optional[List[Dict[str, Any]]] = None
+
+
+class MeetingChatResponse(BaseModel):
+    meeting_id: str
+    question: str
+    answer: str
+    provider: str
+
+
+class LLMConfigRequest(BaseModel):
+    provider: str  # "ollama" | "gemini" | "mock"
+    api_key: Optional[str] = None
+    base_url: Optional[str] = None
+    model: Optional[str] = None
+
+
+class LLMConfigResponse(BaseModel):
+    provider: str
+    model: Optional[str] = None
+    healthy: bool
+
+
 def create_api_router(
     session_service: SessionService,
     meeting_repo: Optional[IMeetingRepository] = None,
     notes_service: Optional[MeetingNotesService] = None,
+    chat_service: Optional[MeetingChatService] = None,
+    llm_factory: Optional[LLMProviderFactory] = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api", tags=["Sessions & Meetings"])
+    router = APIRouter(prefix="/api", tags=["Sessions, Meetings & BYOM"])
 
     # -------------------------------------------------------------
     # Session Routes (In-Memory Live Sessions)
@@ -103,7 +145,7 @@ def create_api_router(
                 meeting_repo.save_meeting(
                     Meeting(
                         meeting_id=request.session_id,
-                        title=f"Reunión {spk_a.name} & {spk_b.name}",
+                        title=f"Conversación {request.session_id}",
                         speaker_a=spk_a,
                         speaker_b=spk_b,
                     )
@@ -120,26 +162,28 @@ def create_api_router(
     @router.get("/sessions", response_model=List[SessionResponse])
     def list_sessions():
         sessions = session_service.list_sessions()
-        return [
-            SessionResponse(
-                session_id=s.session_id,
-                speaker_a=SpeakerProfileSchema(
-                    speaker_id=s.speaker_a.speaker_id,
-                    name=s.speaker_a.name,
-                    native_language=s.speaker_a.native_language,
-                    preferred_voice_style=s.speaker_a.preferred_voice_style,
-                ),
-                speaker_b=SpeakerProfileSchema(
-                    speaker_id=s.speaker_b.speaker_id,
-                    name=s.speaker_b.name,
-                    native_language=s.speaker_b.native_language,
-                    preferred_voice_style=s.speaker_b.preferred_voice_style,
-                ),
-                turn_count=len(s.turns),
-                created_at=s.created_at,
+        responses = []
+        for s in sessions:
+            responses.append(
+                SessionResponse(
+                    session_id=s.session_id,
+                    speaker_a=SpeakerProfileSchema(
+                        speaker_id=s.speaker_a.speaker_id,
+                        name=s.speaker_a.name,
+                        native_language=s.speaker_a.native_language,
+                        preferred_voice_style=s.speaker_a.preferred_voice_style,
+                    ),
+                    speaker_b=SpeakerProfileSchema(
+                        speaker_id=s.speaker_b.speaker_id,
+                        name=s.speaker_b.name,
+                        native_language=s.speaker_b.native_language,
+                        preferred_voice_style=s.speaker_b.preferred_voice_style,
+                    ),
+                    turn_count=len(s.turns),
+                    created_at=s.created_at,
+                )
             )
-            for s in sessions
-        ]
+        return responses
 
     @router.get("/sessions/{session_id}", response_model=SessionResponse)
     def get_session(session_id: str):
@@ -165,16 +209,14 @@ def create_api_router(
         )
 
     @router.get("/sessions/{session_id}/transcript")
-    def get_transcript(session_id: str):
-        s = session_service.get_session(session_id)
-        if not s:
-            raise HTTPException(status_code=404, detail="Session not found")
+    def export_session_transcript(session_id: str):
         return session_service.export_transcript(session_id)
 
+
     @router.delete("/sessions/{session_id}")
-    def delete_session(session_id: str):
-        closed = session_service.close_session(session_id)
-        if not closed:
+    def close_session(session_id: str):
+        success = session_service.close_session(session_id)
+        if not success:
             raise HTTPException(status_code=404, detail="Session not found")
         return {"session_id": session_id, "closed": True}
 
@@ -206,6 +248,7 @@ def create_api_router(
         meeting = Meeting(
             meeting_id=request.meeting_id,
             title=request.title,
+            topic_key=request.topic_key,
             speaker_a=spk_a,
             speaker_b=spk_b,
         )
@@ -219,6 +262,26 @@ def create_api_router(
         )
 
         return _build_meeting_response(meeting)
+
+    @router.get("/meetings/search", response_model=List[SearchResultSchema])
+    def search_turns(q: str, topic: Optional[str] = None):
+        """Full-text search across all meetings and dialogue turns using SQLite FTS5."""
+        if not meeting_repo:
+            raise HTTPException(status_code=503, detail="Storage repository not configured")
+        results = meeting_repo.search_turns(query=q, topic_key=topic)
+        return [
+            SearchResultSchema(
+                meeting_id=r.meeting_id,
+                turn_id=r.turn_id,
+                speaker_id=r.speaker_id,
+                original_text=r.original_text,
+                translated_text=r.translated_text,
+                snippet=r.snippet,
+                topic_key=r.topic_key,
+                created_at=r.created_at,
+            )
+            for r in results
+        ]
 
     @router.get("/meetings", response_model=List[MeetingResponse])
     def list_meetings():
@@ -273,11 +336,80 @@ def create_api_router(
             )
 
         if not m.summary:
-            # Auto-generate if not yet generated
             notes_service.generate_notes_and_finalize(meeting_id)
             m = meeting_repo.get_meeting(meeting_id)
 
         return _build_meeting_response(m).summary
+
+    @router.post("/meetings/{meeting_id}/chat", response_model=MeetingChatResponse)
+    def chat_with_meeting(meeting_id: str, request: MeetingChatRequest):
+        """Conversational Q&A grounded on meeting transcript and summary via BYOM."""
+        if not chat_service:
+            raise HTTPException(status_code=503, detail="Meeting chat service not configured")
+
+        history_msgs = []
+        if request.history:
+            for h in request.history:
+                history_msgs.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
+
+        try:
+            answer = chat_service.ask(
+                meeting_id=meeting_id,
+                question=request.question,
+                history=history_msgs,
+            )
+            return MeetingChatResponse(
+                meeting_id=meeting_id,
+                question=request.question,
+                answer=answer,
+                provider=chat_service.llm_provider.provider_name,
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"LLM error: {e}")
+
+    # -------------------------------------------------------------
+    # BYOM System Configuration Routes
+    # -------------------------------------------------------------
+
+    @router.get("/system/llm-config", response_model=LLMConfigResponse)
+    def get_llm_config():
+        """Returns the active BYOM LLM provider and connectivity status."""
+        if not chat_service:
+            raise HTTPException(status_code=503, detail="Chat service not configured")
+        provider = chat_service.llm_provider
+        model = getattr(provider, "model", None)
+        healthy = provider.health_check()
+        return LLMConfigResponse(
+            provider=provider.provider_name,
+            model=model,
+            healthy=healthy,
+        )
+
+    @router.post("/system/llm-config", response_model=LLMConfigResponse)
+    def configure_llm(request: LLMConfigRequest):
+        """Dynamically switches or reconfigures the active BYOM LLM provider (Ollama / Gemini)."""
+        if not chat_service or not llm_factory:
+            raise HTTPException(status_code=503, detail="Chat service or LLM factory not configured")
+
+        config_dict = {}
+        if request.api_key:
+            config_dict["api_key"] = request.api_key
+        if request.base_url:
+            config_dict["base_url"] = request.base_url
+        if request.model:
+            config_dict["model"] = request.model
+
+        new_provider = llm_factory.create(provider=request.provider, config=config_dict)
+        chat_service.llm_provider = new_provider
+        model = getattr(new_provider, "model", None)
+        healthy = new_provider.health_check()
+        return LLMConfigResponse(
+            provider=new_provider.provider_name,
+            model=model,
+            healthy=healthy,
+        )
 
     return router
 
@@ -303,6 +435,7 @@ def _build_meeting_response(m: Meeting) -> MeetingResponse:
     return MeetingResponse(
         meeting_id=m.meeting_id,
         title=m.title,
+        topic_key=m.topic_key,
         speaker_a=SpeakerProfileSchema(
             speaker_id=m.speaker_a.speaker_id,
             name=m.speaker_a.name,

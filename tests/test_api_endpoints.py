@@ -154,3 +154,95 @@ def test_api_meeting_lifecycle_and_notes(tmp_path):
     assert res.status_code == 200
     assert "text/markdown" in res.headers["content-type"]
     assert "# 📋 Minuta de Reunión: Reunión de Directorio Janus" in res.text
+
+
+def test_api_search_turns_and_topic_key(tmp_path):
+    session_service = SessionService()
+    broadcaster = WebSocketBroadcaster()
+    db_path = str(tmp_path / "search_api_test.db")
+    meeting_repo = SqliteMeetingRepository(db_path=db_path)
+    notes_service = MeetingNotesService(repository=meeting_repo)
+
+    app = create_app(
+        session_service=session_service,
+        broadcaster=broadcaster,
+        meeting_repo=meeting_repo,
+        notes_service=notes_service,
+    )
+    client = TestClient(app)
+
+    # 1. Create meeting with topic_key
+    meet_payload = {
+        "meeting_id": "meet_search_test",
+        "title": "Arquitectura S2ST",
+        "topic_key": "proyectos/janus",
+        "speaker_a": {"speaker_id": "spk_1", "name": "Carlos", "native_language": "es"},
+        "speaker_b": {"speaker_id": "spk_2", "name": "Alice", "native_language": "en"},
+    }
+    res = client.post("/api/meetings", json=meet_payload)
+    assert res.status_code == 201
+    assert res.json()["topic_key"] == "proyectos/janus"
+
+    # 2. Add turn directly via repo
+    from janus.domain.models import ConversationTurn, TranscriptionResult, TranslationResult
+    turn = ConversationTurn(
+        turn_id="turn_s1",
+        session_id="meet_search_test",
+        speaker_id="spk_1",
+        original_transcription=TranscriptionResult("Optimizamos el motor de inferencia local", "es"),
+        translation=TranslationResult("Optimizamos el motor de inferencia local", "es", "We optimized local inference engine", "en"),
+    )
+    meeting_repo.save_turn("meet_search_test", turn)
+
+    # 3. Search via GET /api/meetings/search
+    res_search = client.get("/api/meetings/search?q=inferencia&topic=proyectos")
+    assert res_search.status_code == 200
+    results = res_search.json()
+    assert len(results) == 1
+    assert results[0]["turn_id"] == "turn_s1"
+    assert "inferencia" in results[0]["snippet"].lower()
+
+
+def test_api_meeting_chat_and_system_llm_config(tmp_path):
+    session_service = SessionService()
+    broadcaster = WebSocketBroadcaster()
+    db_path = str(tmp_path / "chat_api_test.db")
+    meeting_repo = SqliteMeetingRepository(db_path=db_path)
+    notes_service = MeetingNotesService(repository=meeting_repo)
+
+    app = create_app(
+        session_service=session_service,
+        broadcaster=broadcaster,
+        meeting_repo=meeting_repo,
+        notes_service=notes_service,
+    )
+    client = TestClient(app)
+
+    # Create meeting
+    meet_payload = {
+        "meeting_id": "meet_ai_chat",
+        "title": "Reunión de IA",
+        "speaker_a": {"speaker_id": "spk_1", "name": "Carlos", "native_language": "es"},
+        "speaker_b": {"speaker_id": "spk_2", "name": "Alice", "native_language": "en"},
+    }
+    client.post("/api/meetings", json=meet_payload)
+
+    # Configure mock LLM provider
+    res_cfg = client.post("/api/system/llm-config", json={"provider": "mock"})
+    assert res_cfg.status_code == 200
+    assert res_cfg.json()["provider"] == "mock"
+
+    # Check config
+    res_get_cfg = client.get("/api/system/llm-config")
+    assert res_get_cfg.status_code == 200
+    assert res_get_cfg.json()["provider"] == "mock"
+
+    # Chat with meeting
+    chat_payload = {"question": "¿De qué se habló en esta sesión?"}
+    res_chat = client.post("/api/meetings/meet_ai_chat/chat", json=chat_payload)
+    assert res_chat.status_code == 200
+    chat_data = res_chat.json()
+    assert chat_data["meeting_id"] == "meet_ai_chat"
+    assert "answer" in chat_data
+    assert chat_data["provider"] == "mock"
+
