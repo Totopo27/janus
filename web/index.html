@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Janus — S2ST & Live Teleprompter</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <header>
+    <div class="logo">
+      <span>🎭 Janus</span>
+      <span style="font-size: 0.8rem; font-weight: normal; opacity: 0.8;">Local-First S2ST</span>
+    </div>
+    <div class="status-badge">
+      <div id="statusDot" class="status-dot"></div>
+      <span id="statusText">Desconectado</span>
+    </div>
+  </header>
+
+  <main>
+    <div class="session-bar">
+      <div class="session-info">
+        <div class="speaker-badge badge-a">
+          <span>🗣️ Carlos</span>
+          <span style="font-size: 0.75rem; background: rgba(56, 189, 248, 0.2); padding: 2px 6px; border-radius: 4px;">ES</span>
+        </div>
+        <span style="color: var(--text-muted);">↔️</span>
+        <div class="speaker-badge badge-b">
+          <span>🗣️ Alice</span>
+          <span style="font-size: 0.75rem; background: rgba(192, 132, 252, 0.2); padding: 2px 6px; border-radius: 4px;">EN</span>
+        </div>
+      </div>
+
+      <div style="display: flex; gap: 1rem; align-items: center;">
+        <label style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem;">
+          <input type="checkbox" id="audioPlaybackToggle" checked />
+          Voz Supertonic (Audio)
+        </label>
+        <button id="clearFeedBtn" style="padding: 0.4rem 0.8rem; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 6px; cursor: pointer;">Limpiar</button>
+      </div>
+    </div>
+
+    <div class="teleprompter-container">
+      <div class="teleprompter-header">
+        <span>TRANSMISIÓN EN VIVO (TELEPROMPTER)</span>
+        <span id="latencyDisplay">Latencia: ~350ms (ONNX CPU)</span>
+      </div>
+      <div id="feed" class="feed">
+        <div style="text-align: center; color: var(--text-muted); margin-top: 3rem;">
+          <p>Presioná el botón de hablar o iniciá la transmisión de voz.</p>
+          <p style="font-size: 0.85rem; margin-top: 0.5rem;">Las notas y subtítulos traducidos aparecerán aquí en tiempo real.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="controls-bar">
+      <button id="recordBtn" class="btn-record">
+        <span id="recordIcon">🎙️</span>
+        <span id="recordText">Presionar para Hablar (ES)</span>
+      </button>
+    </div>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

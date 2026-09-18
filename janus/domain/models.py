@@ -1,0 +1,104 @@
+from __future__ import annotations
+from dataclasses import dataclass, field
+from typing import List, Optional
+import time
+
+
+@dataclass(frozen=True)
+class AudioChunk:
+    """Represents a chunk of raw PCM audio data."""
+    data: bytes
+    sample_rate: int = 16000
+    channels: int = 1
+    timestamp: float = field(default_factory=time.time)
+
+    @property
+    def is_empty(self) -> bool:
+        return len(self.data) == 0
+
+    @property
+    def duration_seconds(self) -> float:
+        if self.is_empty or self.sample_rate <= 0:
+            return 0.0
+        # Assuming 16-bit linear PCM (2 bytes per sample per channel)
+        bytes_per_sample = 2 * self.channels
+        total_samples = len(self.data) / bytes_per_sample
+        return total_samples / self.sample_rate
+
+
+@dataclass(frozen=True)
+class TranscriptionResult:
+    """Represents the transcribed text from an audio segment."""
+    text: str
+    language: str
+    start_time: float = 0.0
+    end_time: float = 0.0
+    confidence: float = 1.0
+
+
+@dataclass(frozen=True)
+class TranslationResult:
+    """Represents the machine translation of a transcribed text."""
+    source_text: str
+    source_lang: str
+    translated_text: str
+    target_lang: str
+    latency_ms: float = 0.0
+
+
+@dataclass(frozen=True)
+class SynthesisResult:
+    """Represents the synthesized audio produced by the TTS engine."""
+    audio_bytes: bytes
+    sample_rate: int = 44100
+    duration_seconds: float = 0.0
+    format: str = "wav"
+    voice_id: str = "default"
+
+
+@dataclass
+class ConversationTurn:
+    """A single dialogue turn within a conversational session."""
+    turn_id: str
+    session_id: str
+    speaker_id: str
+    original_transcription: TranscriptionResult
+    translation: TranslationResult
+    synthesis: Optional[SynthesisResult] = None
+    created_at: float = field(default_factory=time.time)
+
+
+@dataclass(frozen=True)
+class SpeakerProfile:
+    """Identifies a conversation participant and their language."""
+    speaker_id: str
+    name: str
+    native_language: str
+    preferred_voice_style: str = "default"
+
+
+@dataclass
+class Session:
+    """An active conversational session connecting two speakers."""
+    session_id: str
+    speaker_a: SpeakerProfile
+    speaker_b: SpeakerProfile
+    turns: List[ConversationTurn] = field(default_factory=list)
+    created_at: float = field(default_factory=time.time)
+
+    def add_turn(self, turn: ConversationTurn) -> None:
+        self.turns.append(turn)
+
+    def get_speaker(self, speaker_id: str) -> Optional[SpeakerProfile]:
+        if self.speaker_a.speaker_id == speaker_id:
+            return self.speaker_a
+        if self.speaker_b.speaker_id == speaker_id:
+            return self.speaker_b
+        return None
+
+    def get_counterpart(self, speaker_id: str) -> Optional[SpeakerProfile]:
+        if self.speaker_a.speaker_id == speaker_id:
+            return self.speaker_b
+        if self.speaker_b.speaker_id == speaker_id:
+            return self.speaker_a
+        return None

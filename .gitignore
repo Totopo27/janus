@@ -1,0 +1,39 @@
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Testing and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Local model weights / heavy downloads
+models/
+*.onnx
+*.onnx_data
+*.bin
+*.tar.bz2
+assets/models/
+
+# Audio outputs and temp files
+*.wav
+*.mp3
+*.ogg
+temp/
+results/
+
+# Environment variables & secrets
+.env
+.env.local
+
+# IDE
+.vscode/
+.idea/
+*.swp
