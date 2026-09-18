@@ -14,6 +14,14 @@ const recordBtn = document.getElementById("recordBtn");
 const recordText = document.getElementById("recordText");
 const audioPlaybackToggle = document.getElementById("audioPlaybackToggle");
 const clearFeedBtn = document.getElementById("clearFeedBtn");
+const finalizeBtn = document.getElementById("finalizeBtn");
+const notesModal = document.getElementById("notesModal");
+const closeModalBtn = document.getElementById("closeModalBtn");
+const modalExecutiveSummary = document.getElementById("modalExecutiveSummary");
+const modalKeyPoints = document.getElementById("modalKeyPoints");
+const modalActionItems = document.getElementById("modalActionItems");
+const downloadMdBtn = document.getElementById("downloadMdBtn");
+const copyNotesBtn = document.getElementById("copyNotesBtn");
 
 // 1. Initialize or Ensure Session via REST API
 async function initSession() {
@@ -106,7 +114,6 @@ function handleIncomingEvent(payload) {
 }
 
 function renderTurnCard(turn) {
-  // Clear placeholder if present
   const placeholder = feed.querySelector("p");
   if (placeholder) {
     feed.innerHTML = "";
@@ -146,7 +153,7 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// 5. Microphone Recording Control (Push-to-talk / Toggle)
+// 5. Microphone Recording Control (Push-to-talk)
 async function startRecording() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -200,6 +207,78 @@ clearFeedBtn.addEventListener("click", () => {
     <p>Teleprompter limpio.</p>
   </div>`;
 });
+
+// 6. Finalize Meeting & Zoom-Style Meeting Notes
+if (finalizeBtn) {
+  finalizeBtn.addEventListener("click", async () => {
+    finalizeBtn.disabled = true;
+    finalizeBtn.textContent = "Generando Minuta...";
+
+    try {
+      const res = await fetch(`/api/meetings/${SESSION_ID}/finalize`, { method: "POST" });
+      if (!res.ok) {
+        throw new Error("No se pudo finalizar la reunión");
+      }
+      const data = await res.json();
+      const summary = data.summary;
+
+      if (summary) {
+        modalExecutiveSummary.textContent = summary.executive_summary;
+
+        modalKeyPoints.innerHTML = "";
+        (summary.key_points || []).forEach(pt => {
+          const li = document.createElement("li");
+          li.textContent = pt;
+          modalKeyPoints.appendChild(li);
+        });
+
+        modalActionItems.innerHTML = "";
+        (summary.action_items || []).forEach(item => {
+          const li = document.createElement("li");
+          li.style.display = "flex";
+          li.style.alignItems = "center";
+          li.style.gap = "0.6rem";
+          const due = item.due_hint ? ` (Límite: ${item.due_hint})` : "";
+          li.innerHTML = `<input type="checkbox" ${item.completed ? "checked" : ""} /> <span><strong>${escapeHtml(item.assignee)}:</strong> ${escapeHtml(item.task)}${due}</span>`;
+          modalActionItems.appendChild(li);
+        });
+
+        notesModal.style.display = "flex";
+      }
+    } catch (err) {
+      alert("Error generando minuta: " + err.message);
+    } finally {
+      finalizeBtn.disabled = false;
+      finalizeBtn.textContent = "📋 Finalizar y Minuta (Zoom Style)";
+    }
+  });
+}
+
+if (closeModalBtn) {
+  closeModalBtn.addEventListener("click", () => {
+    notesModal.style.display = "none";
+  });
+}
+
+if (downloadMdBtn) {
+  downloadMdBtn.addEventListener("click", () => {
+    window.location.href = `/api/meetings/${SESSION_ID}/notes?format=markdown`;
+  });
+}
+
+if (copyNotesBtn) {
+  copyNotesBtn.addEventListener("click", async () => {
+    try {
+      const res = await fetch(`/api/meetings/${SESSION_ID}/notes?format=markdown`);
+      const md = await res.text();
+      await navigator.clipboard.writeText(md);
+      copyNotesBtn.textContent = "✅ ¡Copiado!";
+      setTimeout(() => { copyNotesBtn.textContent = "📋 Copiar Minuta"; }, 2000);
+    } catch (err) {
+      alert("No se pudo copiar: " + err.message);
+    }
+  });
+}
 
 // Bootstrap
 window.addEventListener("DOMContentLoaded", async () => {

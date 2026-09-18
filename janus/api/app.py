@@ -7,21 +7,27 @@ from janus.api.routes import create_api_router
 from janus.api.websockets import create_websocket_router
 from janus.services.session_service import SessionService
 from janus.services.pipeline_orchestrator import PipelineOrchestrator
+from janus.services.meeting_notes_service import MeetingNotesService
+from janus.adapters.storage.sqlite_repository import SqliteMeetingRepository
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
 from janus.adapters.stt.sherpa_stt_adapter import SherpaSttAdapter
 from janus.adapters.translation.marian_translator import MarianTranslator
 from janus.adapters.tts.supertonic_tts_adapter import SupertonicTtsAdapter
+from janus.ports.storage_port import IMeetingRepository
 
 
 def create_app(
     session_service: SessionService = None,
     orchestrator: PipelineOrchestrator = None,
     broadcaster: WebSocketBroadcaster = None,
+    meeting_repo: IMeetingRepository = None,
+    notes_service: MeetingNotesService = None,
+    db_path: str = "janus.db",
 ) -> FastAPI:
     """Factory creating and configuring the Janus FastAPI application."""
     app = FastAPI(
         title="Janus S2ST Platform",
-        description="Local-First On-Device Speech-to-Speech Translation & Live Teleprompter",
+        description="Local-First On-Device Speech-to-Speech Translation & Live Teleprompter with Zoom-style Meeting Notes",
         version="0.1.0",
     )
 
@@ -32,6 +38,12 @@ def create_app(
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # Initialize default persistence & storage services
+    if meeting_repo is None:
+        meeting_repo = SqliteMeetingRepository(db_path=db_path)
+    if notes_service is None:
+        notes_service = MeetingNotesService(repository=meeting_repo)
 
     # Initialize default services if not injected
     if broadcaster is None:
@@ -47,6 +59,7 @@ def create_app(
             translation_engine=mt,
             tts_engine=tts,
             broadcaster=broadcaster,
+            storage_repo=meeting_repo,
         )
 
     # Health check
@@ -55,8 +68,20 @@ def create_app(
         return {"status": "ok", "app": "Janus", "version": "0.1.0"}
 
     # Include REST API & WebSockets
-    app.include_router(create_api_router(session_service))
-    app.include_router(create_websocket_router(session_service, orchestrator, broadcaster))
+    app.include_router(
+        create_api_router(
+            session_service=session_service,
+            meeting_repo=meeting_repo,
+            notes_service=notes_service,
+        )
+    )
+    app.include_router(
+        create_websocket_router(
+            session_service=session_service,
+            orchestrator=orchestrator,
+            broadcaster=broadcaster,
+        )
+    )
 
     # Serve static Web UI if directory exists
     web_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(__file__))), "web")

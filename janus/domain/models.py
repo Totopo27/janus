@@ -102,3 +102,51 @@ class Session:
         if self.speaker_b.speaker_id == speaker_id:
             return self.speaker_a
         return None
+
+
+@dataclass
+class ActionItem:
+    """A concrete task or commitment extracted from a conversation (Zoom-style)."""
+    assignee: str
+    task: str
+    completed: bool = False
+    due_hint: Optional[str] = None
+
+
+@dataclass
+class MeetingSummary:
+    """Executive summary, key discussion points, and commitments for a meeting."""
+    executive_summary: str
+    key_points: List[str] = field(default_factory=list)
+    action_items: List[ActionItem] = field(default_factory=list)
+    generated_at: float = field(default_factory=time.time)
+
+
+@dataclass
+class Meeting:
+    """A persistent meeting record containing participants, dialogue turns, and executive summary."""
+    meeting_id: str
+    title: str
+    speaker_a: SpeakerProfile
+    speaker_b: SpeakerProfile
+    turns: List[ConversationTurn] = field(default_factory=list)
+    summary: Optional[MeetingSummary] = None
+    status: str = "active"  # "active" | "completed"
+    created_at: float = field(default_factory=time.time)
+    ended_at: Optional[float] = None
+
+    def add_turn(self, turn: ConversationTurn) -> None:
+        self.turns.append(turn)
+
+    def finalize(self, summary: MeetingSummary) -> None:
+        self.summary = summary
+        self.status = "completed"
+        self.ended_at = time.time()
+
+    def get_speaker(self, speaker_id: str) -> Optional[SpeakerProfile]:
+        if self.speaker_a.speaker_id == speaker_id:
+            return self.speaker_a
+        if self.speaker_b.speaker_id == speaker_id:
+            return self.speaker_b
+        return None
+

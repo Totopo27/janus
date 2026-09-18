@@ -17,6 +17,7 @@ from janus.ports.stt_port import ISpeechRecognizer
 from janus.ports.translation_port import ITranslator
 from janus.ports.tts_port import ISpeechSynthesizer
 from janus.ports.broadcaster_port import IEventBroadcaster
+from janus.ports.storage_port import IMeetingRepository
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 class PipelineOrchestrator:
     """
     Coordinates the Speech-to-Speech Translation (S2ST) pipeline:
-    AudioChunk -> VAD -> STT -> MT -> TTS -> Broadcaster
+    AudioChunk -> VAD -> STT -> MT -> TTS -> Broadcaster -> Storage
     """
 
     def __init__(
@@ -34,12 +35,14 @@ class PipelineOrchestrator:
         tts_engine: ISpeechSynthesizer,
         broadcaster: Optional[IEventBroadcaster] = None,
         vad_engine: Optional[IVoiceActivityDetector] = None,
+        storage_repo: Optional[IMeetingRepository] = None,
     ) -> None:
         self.stt = stt_engine
         self.mt = translation_engine
         self.tts = tts_engine
         self.broadcaster = broadcaster
         self.vad = vad_engine
+        self.storage = storage_repo
 
     async def process_turn(
         self,
@@ -143,6 +146,13 @@ class PipelineOrchestrator:
             synthesis=synthesis,
         )
         session.add_turn(turn)
+
+        # 6. Auto-persist to SQLite if storage repository is configured
+        if self.storage:
+            try:
+                self.storage.save_turn(session.session_id, turn)
+            except Exception as e:
+                logger.warning(f"Failed to auto-persist turn to storage repository: {e}")
 
         if self.broadcaster:
             await self.broadcaster.broadcast_event(

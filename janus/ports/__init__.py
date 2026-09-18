@@ -4,6 +4,7 @@ from janus.ports.stt_port import ISpeechRecognizer
 from janus.ports.translation_port import ITranslator
 from janus.ports.tts_port import ISpeechSynthesizer
 from janus.ports.broadcaster_port import IEventBroadcaster
+from janus.ports.storage_port import IMeetingRepository
 
 __all__ = [
     "IVoiceActivityDetector",
@@ -11,4 +12,5 @@ __all__ = [
     "ITranslator",
     "ISpeechSynthesizer",
     "IEventBroadcaster",
+    "IMeetingRepository",
 ]

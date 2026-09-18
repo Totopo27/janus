@@ -33,6 +33,12 @@ results/
 .env
 .env.local
 
+# Databases
+*.db
+*.db-wal
+*.db-shm
+*.sqlite3
+
 # IDE
 .vscode/
 .idea/
