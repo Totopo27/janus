@@ -31,7 +31,7 @@ class LLMProviderFactory:
             return GeminiAdapter(api_key=api_key, model=model)
 
         # Default to local Ollama
-        base_url = cfg.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+        # The endpoint is operator-controlled only. API callers cannot override it.
+        base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         model = cfg.get("model") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
         return OllamaAdapter(base_url=base_url, model=model)
-

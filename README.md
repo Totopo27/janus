@@ -110,9 +110,27 @@ pytest
 ```
 
 ### 4. Start Janus Server
+
+Janus fails closed unless separate user and administrator API keys are configured.
+Use long random values and keep them out of source control and command history. Configure
+the exact browser origins that may call the API or open WebSockets:
+
 ```bash
+export JANUS_API_KEY="<random-user-token-at-least-24-characters>"
+export JANUS_ADMIN_API_KEY="<different-random-admin-token-at-least-24-characters>"
+export JANUS_TRUSTED_ORIGINS="http://127.0.0.1:8000,http://localhost:8000"
 python run.py
 ```
+
+The browser prompts for the user token and stores it only for the current tab session.
+Provider changes additionally require the administrator token. A local production audio
+pipeline also requires `JANUS_STT_TOKENS`, `JANUS_STT_WHISPER_ENCODER`,
+`JANUS_STT_WHISPER_DECODER`, `JANUS_TRANSLATION_MODEL`, and `JANUS_TTS_MODEL_DIR` to
+point to trusted local model assets. Missing models cause an explicit error; Janus no
+longer fabricates fallback transcription, translation, or speech.
+
+When Janus is reachable from another machine, terminate TLS in front of it and use only
+`https://` trusted origins so bearer and WebSocket authentication tokens are encrypted in transit.
 
 Open `http://localhost:8000` (or `http://localhost:8080`) in your browser. Connect a second device (tablet or phone on the same Wi-Fi network) to use the live teleprompter display.
 

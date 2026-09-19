@@ -64,11 +64,10 @@ class SherpaSttAdapter(ISpeechRecognizer):
                 self._recognizer = recognizer
                 logger.info("Sherpa-ONNX Transducer recognizer initialized successfully.")
             else:
-                logger.warning("No valid Sherpa-ONNX model files specified. Running in simulated fallback mode.")
-                self._recognizer = "fallback"
+                raise RuntimeError("Valid Sherpa-ONNX model files are required")
         except Exception as e:
-            logger.warning(f"Could not load Sherpa-ONNX native recognizer: {e}. Fallback active.")
-            self._recognizer = "fallback"
+            logger.error("Sherpa-ONNX recognizer initialization failed (%s)", type(e).__name__)
+            raise RuntimeError("Sherpa-ONNX recognizer is not configured or could not be loaded") from None
 
     def transcribe(
         self,
@@ -79,33 +78,23 @@ class SherpaSttAdapter(ISpeechRecognizer):
 
         if audio.is_empty:
             return TranscriptionResult(text="", language=language or "es")
+        if audio.sample_rate != 16000 or audio.channels != 1 or len(audio.data) % 2:
+            raise ValueError("Sherpa requires mono 16 kHz PCM16 audio")
 
-        # If native recognizer is loaded
-        if self._recognizer != "fallback" and self._recognizer is not None:
-            try:
-                import numpy as np
-                # Convert 16-bit PCM bytes to float32 numpy array normalized to [-1.0, 1.0]
-                samples = np.frombuffer(audio.data, dtype=np.int16).astype(np.float32) / 32768.0
-                stream = self._recognizer.create_stream()
-                stream.accept_waveform(audio.sample_rate, samples)
-                self._recognizer.decode_stream(stream)
-                text = stream.result.text.strip()
-                return TranscriptionResult(
-                    text=text,
-                    language=language or "es",
-                    start_time=0.0,
-                    end_time=audio.duration_seconds,
-                    confidence=0.95,
-                )
-            except Exception as e:
-                logger.error(f"Sherpa-ONNX stream decoding error: {e}")
-
-        # Fallback simulation
-        simulated_text = "Audio detectado y procesado localmente"
-        return TranscriptionResult(
-            text=simulated_text,
-            language=language or "es",
-            start_time=0.0,
-            end_time=audio.duration_seconds,
-            confidence=0.90,
-        )
+        try:
+            import numpy as np
+            samples = np.frombuffer(audio.data, dtype="<i2").astype(np.float32) / 32768.0
+            stream = self._recognizer.create_stream()
+            stream.accept_waveform(audio.sample_rate, samples)
+            self._recognizer.decode_stream(stream)
+            text = stream.result.text.strip()
+            return TranscriptionResult(
+                text=text,
+                language=language or "es",
+                start_time=0.0,
+                end_time=audio.duration_seconds,
+                confidence=0.95,
+            )
+        except Exception as e:
+            logger.error("Sherpa-ONNX decoding failed (%s)", type(e).__name__)
+            raise RuntimeError("Speech recognition failed") from None

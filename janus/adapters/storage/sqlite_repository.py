@@ -126,6 +126,13 @@ class SqliteMeetingRepository(IMeetingRepository):
             if cols and "topic_key" not in cols:
                 conn.execute("ALTER TABLE meetings ADD COLUMN topic_key TEXT;")
 
+            # Repair legacy duplicate/stale FTS rows created by INSERT OR REPLACE.
+            conn.execute("DELETE FROM turns_fts")
+            conn.execute("""
+                INSERT INTO turns_fts(turn_id, meeting_id, speaker_id, original_text, translated_text)
+                SELECT turn_id, meeting_id, speaker_id, original_text, translated_text FROM turns
+            """)
+
     def save_meeting(self, meeting: Meeting) -> None:
         with self._get_connection() as conn:
             conn.execute("""
@@ -161,12 +168,24 @@ class SqliteMeetingRepository(IMeetingRepository):
     def save_turn(self, meeting_id: str, turn: ConversationTurn) -> None:
         with self._get_connection() as conn:
             conn.execute("""
-                INSERT OR REPLACE INTO turns (
+                INSERT INTO turns (
                     turn_id, meeting_id, speaker_id,
                     original_text, source_lang,
                     translated_text, target_lang,
                     latency_ms, start_time, end_time, confidence, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(turn_id) DO UPDATE SET
+                    meeting_id=excluded.meeting_id,
+                    speaker_id=excluded.speaker_id,
+                    original_text=excluded.original_text,
+                    source_lang=excluded.source_lang,
+                    translated_text=excluded.translated_text,
+                    target_lang=excluded.target_lang,
+                    latency_ms=excluded.latency_ms,
+                    start_time=excluded.start_time,
+                    end_time=excluded.end_time,
+                    confidence=excluded.confidence,
+                    created_at=excluded.created_at
             """, (
                 turn.turn_id,
                 meeting_id,
@@ -331,7 +350,7 @@ class SqliteMeetingRepository(IMeetingRepository):
                 t.speaker_id,
                 t.original_text,
                 t.translated_text,
-                snippet(turns_fts, -1, '<b>', '</b>', '...', 15) AS snippet_text,
+                snippet(turns_fts, -1, '', '', '...', 15) AS snippet_text,
                 m.topic_key,
                 t.created_at
             FROM turns_fts f
@@ -368,4 +387,3 @@ class SqliteMeetingRepository(IMeetingRepository):
                 )
                 for r in rows
             ]
-

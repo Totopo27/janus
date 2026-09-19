@@ -1,23 +1,27 @@
-from typing import List, Optional, Dict, Any
-from fastapi import APIRouter, HTTPException, Response, status
-from pydantic import BaseModel, Field
+from typing import List, Optional, Any, Literal
+from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 from janus.domain.models import SpeakerProfile, Meeting, ChatMessage, SearchResult
 from janus.services.session_service import SessionService
 from janus.services.meeting_notes_service import MeetingNotesService
 from janus.services.meeting_chat_service import MeetingChatService
 from janus.adapters.llm.factory import LLMProviderFactory
 from janus.ports.storage_port import IMeetingRepository
+from janus.api.security import ApiAuthenticator
+
+
+RESOURCE_ID_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$"
 
 
 class SpeakerProfileSchema(BaseModel):
-    speaker_id: str
-    name: str
-    native_language: str
-    preferred_voice_style: str = "default"
+    speaker_id: str = Field(..., pattern=RESOURCE_ID_PATTERN)
+    name: str = Field(..., min_length=1, max_length=120)
+    native_language: str = Field(..., min_length=2, max_length=16, pattern=r"^[A-Za-z-]+$")
+    preferred_voice_style: str = Field("default", min_length=1, max_length=64)
 
 
 class CreateSessionRequest(BaseModel):
-    session_id: str = Field(..., description="Unique session identifier")
+    session_id: str = Field(..., pattern=RESOURCE_ID_PATTERN, description="Unique session identifier")
     speaker_a: SpeakerProfileSchema
     speaker_b: SpeakerProfileSchema
 
@@ -31,9 +35,9 @@ class SessionResponse(BaseModel):
 
 
 class CreateMeetingRequest(BaseModel):
-    meeting_id: str = Field(..., description="Unique meeting identifier")
-    title: str = Field(..., description="Meeting topic or title")
-    topic_key: Optional[str] = Field(None, description="Hierarchical topic key inspired by Engram (e.g. proyectos/janus)")
+    meeting_id: str = Field(..., pattern=RESOURCE_ID_PATTERN, description="Unique meeting identifier")
+    title: str = Field(..., min_length=1, max_length=240, description="Meeting topic or title")
+    topic_key: Optional[str] = Field(None, max_length=240, description="Hierarchical topic key inspired by Engram (e.g. proyectos/janus)")
     speaker_a: SpeakerProfileSchema
     speaker_b: SpeakerProfileSchema
 
@@ -76,9 +80,14 @@ class SearchResultSchema(BaseModel):
     created_at: float
 
 
+class ChatMessageSchema(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(..., min_length=1, max_length=4000)
+
+
 class MeetingChatRequest(BaseModel):
-    question: str
-    history: Optional[List[Dict[str, Any]]] = None
+    question: str = Field(..., min_length=1, max_length=4000)
+    history: Optional[List[ChatMessageSchema]] = Field(None, max_length=20)
 
 
 class MeetingChatResponse(BaseModel):
@@ -89,10 +98,10 @@ class MeetingChatResponse(BaseModel):
 
 
 class LLMConfigRequest(BaseModel):
-    provider: str  # "ollama" | "gemini" | "mock"
-    api_key: Optional[str] = None
-    base_url: Optional[str] = None
-    model: Optional[str] = None
+    model_config = ConfigDict(extra="forbid")
+    provider: Literal["ollama", "gemini", "mock"]
+    api_key: Optional[SecretStr] = Field(None, max_length=4096)
+    model: Optional[str] = Field(None, min_length=1, max_length=128, pattern=r"^[A-Za-z0-9._:/-]+$")
 
 
 class LLMConfigResponse(BaseModel):
@@ -111,7 +120,7 @@ class LiveNotesResponse(BaseModel):
 
 
 class CatchUpRequest(BaseModel):
-    last_n_turns: int = 6
+    last_n_turns: int = Field(6, ge=1, le=50)
 
 
 class CatchUpResponse(BaseModel):
@@ -126,8 +135,15 @@ def create_api_router(
     chat_service: Optional[MeetingChatService] = None,
     live_notetaker: Optional[Any] = None,
     llm_factory: Optional[LLMProviderFactory] = None,
+    authenticator: Optional[ApiAuthenticator] = None,
 ) -> APIRouter:
-    router = APIRouter(prefix="/api", tags=["Sessions, Meetings & BYOM"])
+    if authenticator is None:
+        raise ValueError("An API authenticator is required")
+    router = APIRouter(
+        prefix="/api",
+        tags=["Sessions, Meetings & BYOM"],
+        dependencies=[Depends(authenticator.require_user)],
+    )
 
 
     # -------------------------------------------------------------
@@ -152,11 +168,14 @@ def create_api_router(
             native_language=request.speaker_b.native_language,
             preferred_voice_style=request.speaker_b.preferred_voice_style,
         )
-        session = session_service.create_session(
-            session_id=request.session_id,
-            speaker_a=spk_a,
-            speaker_b=spk_b,
-        )
+        try:
+            session = session_service.create_session(
+                session_id=request.session_id,
+                speaker_a=spk_a,
+                speaker_b=spk_b,
+            )
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from None
 
         # Also auto-register in meeting repo if active
         if meeting_repo:
@@ -252,6 +271,8 @@ def create_api_router(
     def create_meeting(request: CreateMeetingRequest):
         if not meeting_repo:
             raise HTTPException(status_code=503, detail="Storage repository not configured")
+        if meeting_repo.get_meeting(request.meeting_id):
+            raise HTTPException(status_code=409, detail="Meeting already exists")
 
         spk_a = SpeakerProfile(
             speaker_id=request.speaker_a.speaker_id,
@@ -284,7 +305,10 @@ def create_api_router(
         return _build_meeting_response(meeting)
 
     @router.get("/meetings/search", response_model=List[SearchResultSchema])
-    def search_turns(q: str, topic: Optional[str] = None):
+    def search_turns(
+        q: str = Query(..., min_length=1, max_length=200),
+        topic: Optional[str] = Query(None, max_length=240),
+    ):
         """Full-text search across all meetings and dialogue turns using SQLite FTS5."""
         if not meeting_repo:
             raise HTTPException(status_code=503, detail="Storage repository not configured")
@@ -370,7 +394,7 @@ def create_api_router(
         history_msgs = []
         if request.history:
             for h in request.history:
-                history_msgs.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
+                history_msgs.append(ChatMessage(role=h.role, content=h.content))
 
         try:
             answer = chat_service.ask(
@@ -386,8 +410,8 @@ def create_api_router(
             )
         except ValueError as e:
             raise HTTPException(status_code=404, detail=str(e))
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=f"LLM error: {e}")
+        except Exception:
+            raise HTTPException(status_code=502, detail="LLM provider request failed") from None
 
     @router.get("/meetings/{meeting_id}/live-notes", response_model=LiveNotesResponse)
     def get_live_notes(meeting_id: str):
@@ -413,11 +437,11 @@ def create_api_router(
         )
 
     @router.post("/meetings/{meeting_id}/live-notes/refresh", response_model=LiveNotesResponse)
-    def refresh_live_notes(meeting_id: str):
+    async def refresh_live_notes(meeting_id: str):
         """Forces an immediate synthesis update of live notes using LLM."""
         if not live_notetaker:
             raise HTTPException(status_code=503, detail="Live notetaker service not configured")
-        notes = live_notetaker.update_notes(meeting_id)
+        notes = await live_notetaker.update_notes_async(meeting_id)
         return LiveNotesResponse(
             meeting_id=notes.meeting_id,
             current_topic=notes.current_topic,
@@ -436,11 +460,14 @@ def create_api_router(
         )
 
     @router.post("/meetings/{meeting_id}/catch-up", response_model=CatchUpResponse)
-    def catch_up_meeting(meeting_id: str, request: CatchUpRequest = CatchUpRequest()):
+    async def catch_up_meeting(meeting_id: str, request: CatchUpRequest = CatchUpRequest()):
         """Zoom AI Companion 'Catch Me Up': concise executive recap of the last few minutes."""
         if not live_notetaker:
             raise HTTPException(status_code=503, detail="Live notetaker service not configured")
-        summary = live_notetaker.catch_up(meeting_id=meeting_id, last_n_turns=request.last_n_turns)
+        summary = await live_notetaker.catch_up_async(
+            meeting_id=meeting_id,
+            last_n_turns=request.last_n_turns,
+        )
         return CatchUpResponse(
             meeting_id=meeting_id,
             summary=summary,
@@ -465,7 +492,11 @@ def create_api_router(
             healthy=healthy,
         )
 
-    @router.post("/system/llm-config", response_model=LLMConfigResponse)
+    @router.post(
+        "/system/llm-config",
+        response_model=LLMConfigResponse,
+        dependencies=[Depends(authenticator.require_admin)],
+    )
     def configure_llm(request: LLMConfigRequest):
         """Dynamically switches or reconfigures the active BYOM LLM provider (Ollama / Gemini)."""
         if not chat_service or not llm_factory:
@@ -473,14 +504,14 @@ def create_api_router(
 
         config_dict = {}
         if request.api_key:
-            config_dict["api_key"] = request.api_key
-        if request.base_url:
-            config_dict["base_url"] = request.base_url
+            config_dict["api_key"] = request.api_key.get_secret_value()
         if request.model:
             config_dict["model"] = request.model
 
         new_provider = llm_factory.create(provider=request.provider, config=config_dict)
         chat_service.llm_provider = new_provider
+        if live_notetaker:
+            live_notetaker.llm_provider = new_provider
         model = getattr(new_provider, "model", None)
         healthy = new_provider.health_check()
         return LLMConfigResponse(

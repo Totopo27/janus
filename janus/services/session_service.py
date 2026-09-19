@@ -17,7 +17,13 @@ class SessionService:
         speaker_a: SpeakerProfile,
         speaker_b: SpeakerProfile,
     ) -> Session:
-        """Creates and stores a new conversational session."""
+        """Creates a session, or returns an identical existing session without resetting it."""
+        existing = self._sessions.get(session_id)
+        if existing is not None:
+            if existing.speaker_a == speaker_a and existing.speaker_b == speaker_b:
+                return existing
+            raise ValueError(f"Session '{session_id}' already exists with different participants")
+
         session = Session(
             session_id=session_id,
             speaker_a=speaker_a,

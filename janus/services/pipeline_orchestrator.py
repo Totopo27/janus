@@ -1,4 +1,5 @@
 import logging
+import asyncio
 import uuid
 from typing import Optional, Any
 from janus.domain.models import (
@@ -37,6 +38,7 @@ class PipelineOrchestrator:
         vad_engine: Optional[IVoiceActivityDetector] = None,
         storage_repo: Optional[IMeetingRepository] = None,
         live_notetaker: Optional[Any] = None,
+        max_concurrent_turns: int = 1,
     ) -> None:
         self.stt = stt_engine
         self.mt = translation_engine
@@ -45,9 +47,20 @@ class PipelineOrchestrator:
         self.vad = vad_engine
         self.storage = storage_repo
         self.live_notetaker = live_notetaker
+        self._processing_semaphore = asyncio.Semaphore(max(1, max_concurrent_turns))
+        self._background_tasks: set[asyncio.Task] = set()
 
 
     async def process_turn(
+        self,
+        session: Session,
+        speaker_id: str,
+        audio: AudioChunk,
+    ) -> Optional[ConversationTurn]:
+        async with self._processing_semaphore:
+            return await self._process_turn(session=session, speaker_id=speaker_id, audio=audio)
+
+    async def _process_turn(
         self,
         session: Session,
         speaker_id: str,
@@ -78,8 +91,8 @@ class PipelineOrchestrator:
         target_lang = counterpart.native_language
 
         # 2. Automatic Speech Recognition (STT)
-        transcription = self.stt.transcribe(audio=audio, language=source_lang)
-        logger.info(f"[{session.session_id}] Transcribed ({source_lang}): '{transcription.text}'")
+        transcription = await asyncio.to_thread(self.stt.transcribe, audio, source_lang)
+        logger.info("[%s] Transcription completed (%s)", session.session_id, source_lang)
 
         if self.broadcaster:
             await self.broadcaster.broadcast_event(
@@ -97,12 +110,13 @@ class PipelineOrchestrator:
             return None
 
         # 3. Machine Translation (MT)
-        translation = self.mt.translate(
-            text=transcription.text,
-            source_lang=source_lang,
-            target_lang=target_lang,
+        translation = await asyncio.to_thread(
+            self.mt.translate,
+            transcription.text,
+            source_lang,
+            target_lang,
         )
-        logger.info(f"[{session.session_id}] Translated ({target_lang}): '{translation.translated_text}'")
+        logger.info("[%s] Translation completed (%s)", session.session_id, target_lang)
 
         if self.broadcaster:
             await self.broadcaster.broadcast_event(
@@ -119,10 +133,11 @@ class PipelineOrchestrator:
             )
 
         # 4. Text-to-Speech Synthesis (TTS)
-        synthesis = self.tts.synthesize(
-            text=translation.translated_text,
-            language=target_lang,
-            voice_style=counterpart.preferred_voice_style,
+        synthesis = await asyncio.to_thread(
+            self.tts.synthesize,
+            translation.translated_text,
+            target_lang,
+            counterpart.preferred_voice_style,
         )
         logger.info(f"[{session.session_id}] Synthesized TTS audio ({len(synthesis.audio_bytes)} bytes)")
 
@@ -148,14 +163,10 @@ class PipelineOrchestrator:
             translation=translation,
             synthesis=synthesis,
         )
-        session.add_turn(turn)
-
-        # 6. Auto-persist to SQLite if storage repository is configured
+        # 6. Persist before publishing the turn so storage failures cannot be hidden.
         if self.storage:
-            try:
-                self.storage.save_turn(session.session_id, turn)
-            except Exception as e:
-                logger.warning(f"Failed to auto-persist turn to storage repository: {e}")
+            await asyncio.to_thread(self.storage.save_turn, session.session_id, turn)
+        session.add_turn(turn)
 
         if self.broadcaster:
             await self.broadcaster.broadcast_event(
@@ -173,18 +184,19 @@ class PipelineOrchestrator:
 
         # 7. Notify Live Notetaker (Zoom AI Companion) in background
         if self.live_notetaker:
-            try:
-                import asyncio
-                # If there's an active running loop, schedule as async task, else call directly
-                loop = asyncio.get_event_loop()
-                if loop.is_running():
-                    loop.create_task(
-                        asyncio.to_thread(self.live_notetaker.process_turn, session.session_id, turn)
-                    )
-                else:
-                    self.live_notetaker.process_turn(session.session_id, turn)
-            except Exception as e:
-                logger.debug(f"Live notetaker background dispatch skipped or failed: {e}")
+            task = asyncio.create_task(
+                self.live_notetaker.process_turn_async(session.session_id, turn)
+            )
+            self._background_tasks.add(task)
+            task.add_done_callback(self._background_task_finished)
 
         return turn
 
+    def _background_task_finished(self, task: asyncio.Task) -> None:
+        self._background_tasks.discard(task)
+        try:
+            task.result()
+        except asyncio.CancelledError:
+            return
+        except Exception as exc:
+            logger.error("Live notetaker background task failed (%s)", type(exc).__name__)
