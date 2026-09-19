@@ -375,7 +375,7 @@ function stopMeetAudioCapture() {
   if (connectMeetAudioBtn) {
     connectMeetAudioBtn.innerHTML = `
       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-      <span>Capturar Audio Remoto (Pestana)</span>
+      <span>Capturar Audio Remoto (Pestaña)</span>
     `;
   }
 }
@@ -606,7 +606,7 @@ function renderLiveNotes(data) {
 
   if (data.key_takeaways && liveTakeawaysList) {
     if (data.key_takeaways.length === 0) {
-      liveTakeawaysList.innerHTML = `<li class="empty-hint">El asistente esta escuchando activamente para sintetizar los acuerdos...</li>`;
+      liveTakeawaysList.innerHTML = `<li class="empty-hint">El asistente está escuchando activamente para sintetizar los acuerdos...</li>`;
     } else {
       liveTakeawaysList.innerHTML = "";
       data.key_takeaways.forEach(pt => {
@@ -619,7 +619,7 @@ function renderLiveNotes(data) {
 
   if (data.action_items && liveActionItemsList) {
     if (data.action_items.length === 0) {
-      liveActionItemsList.innerHTML = `<li class="empty-hint">Aun no se han detectado compromisos o tareas explicitas.</li>`;
+      liveActionItemsList.innerHTML = `<li class="empty-hint">Aún no se han detectado compromisos o tareas explícitas.</li>`;
     } else {
       liveActionItemsList.innerHTML = "";
       data.action_items.forEach(itm => {
@@ -649,7 +649,7 @@ if (catchUpBtn) {
     catchUpBtn.disabled = true;
     catchUpBtn.innerHTML = `<span>Sintetizando...</span>`;
     catchUpBox.style.display = "block";
-    catchUpText.textContent = "El asistente Zoom AI Companion esta revisando los ultimos minutos de la conversacion...";
+    catchUpText.textContent = "El asistente Zoom AI Companion está revisando los últimos minutos de la conversación...";
 
     try {
       const res = await fetch(`/api/meetings/${SESSION_ID}/catch-up`, {
@@ -666,7 +666,7 @@ if (catchUpBtn) {
       catchUpBtn.disabled = false;
       catchUpBtn.innerHTML = `
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
-        <span>Ponerse al Dia</span>
+        <span>Ponerse al Día</span>
       `;
     }
   });

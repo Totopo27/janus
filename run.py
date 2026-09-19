@@ -35,11 +35,11 @@ def resolve_port(preferred_port: int, host: str = "127.0.0.1") -> int:
 
     fallback_port = 8080 if preferred_port == 8000 else preferred_port + 1
     print("\n" + "=" * 65)
-    print(f"[!] ALERTA: El puerto {preferred_port} ya esta en uso por otro proceso.")
+    print(f"[!] ALERTA: El puerto {preferred_port} ya está en uso por otro proceso.")
     print("    En Windows, esto causa que las peticiones vayan al otro servidor")
     print("    (por ejemplo OpenFolioLM) devolviendo '{\"detail\":\"Not Found\"}'.")
-    print(f"[+] Cambiando automaticamente al puerto libre: {fallback_port}")
-    print(f"[+] Abre en tu navegador: http://{host}:{fallback_port}")
+    print(f"[+] Cambiando automáticamente al puerto libre: {fallback_port}")
+    print(f"[+] Abrí en tu navegador: http://{host}:{fallback_port}")
     print("=" * 65 + "\n")
     return fallback_port
 
