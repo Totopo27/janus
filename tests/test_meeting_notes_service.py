@@ -62,10 +62,10 @@ def test_generate_meeting_notes_and_export_markdown(service):
 
     # Export to markdown
     markdown = notes_service.export_as_markdown("meet_zoom_1")
-    assert "# 📋 Minuta de Reunión: Discusión Técnica Janus S2ST" in markdown
+    assert "# Minuta de Reunión: Discusión Técnica Janus S2ST" in markdown
     assert "Carlos (es)" in markdown
     assert "Alice (en)" in markdown
-    assert "## 📌 Resumen Ejecutivo" in markdown
-    assert "## 🔑 Puntos Clave" in markdown
-    assert "## ✅ Compromisos y Tareas (Action Items)" in markdown
-    assert "## 📜 Transcripción Bilingüe Cronológica" in markdown
+    assert "## Resumen Ejecutivo" in markdown
+    assert "## Puntos Clave" in markdown
+    assert "## Compromisos y Tareas (Action Items)" in markdown
+    assert "## Transcripción Bilingüe Cronológica" in markdown

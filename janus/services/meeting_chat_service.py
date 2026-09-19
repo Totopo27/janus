@@ -36,7 +36,7 @@ class MeetingChatService:
             if meeting.summary.action_items:
                 lines.append("\nCompromisos / Tareas:")
                 for itm in meeting.summary.action_items:
-                    status = "✅ Hecho" if itm.completed else "⏳ Pendiente"
+                    status = "Hecho" if itm.completed else "Pendiente"
                     hint = f" (Plazo: {itm.due_hint})" if itm.due_hint else ""
                     lines.append(f"- [{status}] {itm.assignee}: {itm.task}{hint}")
 

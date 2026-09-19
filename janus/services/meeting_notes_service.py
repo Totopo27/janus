@@ -136,22 +136,22 @@ class MeetingNotesService:
             return "# Reunión no encontrada"
 
         created_dt = datetime.fromtimestamp(meeting.created_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
-        status_badge = "🟢 Completada" if meeting.status == "completed" else "🟡 En Progreso"
+        status_badge = "[Completada]" if meeting.status == "completed" else "[En Progreso]"
 
         lines = [
-            f"# 📋 Minuta de Reunión: {meeting.title}",
+            f"# Minuta de Reunión: {meeting.title}",
             "",
             f"> **Fecha y Hora**: {created_dt}  ",
             f"> **Estado**: {status_badge}  ",
-            f"> **Participantes**: {meeting.speaker_a.name} ({meeting.speaker_a.native_language}) ↔️ {meeting.speaker_b.name} ({meeting.speaker_b.native_language})  ",
+            f"> **Participantes**: {meeting.speaker_a.name} ({meeting.speaker_a.native_language}) / {meeting.speaker_b.name} ({meeting.speaker_b.native_language})  ",
             "",
             "---",
             "",
-            "## 📌 Resumen Ejecutivo",
+            "## Resumen Ejecutivo",
             "",
             meeting.summary.executive_summary if meeting.summary else "Pendiente de finalización.",
             "",
-            "## 🔑 Puntos Clave",
+            "## Puntos Clave",
             "",
         ]
 
@@ -163,7 +163,7 @@ class MeetingNotesService:
 
         lines.extend([
             "",
-            "## ✅ Compromisos y Tareas (Action Items)",
+            "## Compromisos y Tareas (Action Items)",
             "",
         ])
 
@@ -179,7 +179,7 @@ class MeetingNotesService:
             "",
             "---",
             "",
-            "## 📜 Transcripción Bilingüe Cronológica",
+            "## Transcripción Bilingüe Cronológica",
             "",
             "| Tiempo | Locutor | Idioma Original | Traducción Simultánea |",
             "| :--- | :--- | :--- | :--- |",

@@ -3,23 +3,41 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Janus — S2ST & Live Teleprompter</title>
+  <title>Janus — S2ST & AI Companion</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
+  <!-- Enterprise Header -->
   <header>
-    <div class="logo">
-      <span>🎭 Janus</span>
-      <span style="font-size: 0.8rem; font-weight: normal; opacity: 0.8;">Local-First S2ST & BYOM</span>
+    <div class="logo-group">
+      <div class="brand-badge">
+        <svg class="icon-brand" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M2 10v4M6 6v12M10 3v18M14 8v8M18 5v14M22 10v4"/>
+        </svg>
+      </div>
+      <div>
+        <div class="brand-title">JANUS</div>
+        <div class="brand-subtitle">Local-First S2ST &amp; Meeting Intelligence</div>
+      </div>
+      <span class="version-chip">v0.3.0 Pro</span>
     </div>
-    <div style="display: flex; gap: 0.8rem; align-items: center;">
-      <button id="openSearchBtn" class="btn-search">
-        🔍 Buscar en Historial (FTS5)
+
+    <div class="header-actions">
+      <button id="openSearchBtn" class="btn-ghost" title="Buscar en transcripciones y acuerdos anteriores">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+        </svg>
+        <span>Historial (FTS5)</span>
       </button>
-      <button id="finalizeBtn" class="btn-finalize">
-        📋 Finalizar y Minuta (Zoom Style)
+
+      <button id="finalizeBtn" class="btn-primary-action" title="Generar minuta ejecutiva y resumen">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+        </svg>
+        <span>Generar Minuta</span>
       </button>
-      <div class="status-badge">
+
+      <div class="status-pill">
         <div id="statusDot" class="status-dot"></div>
         <span id="statusText">Desconectado</span>
       </div>
@@ -27,200 +45,286 @@
   </header>
 
   <main>
-    <!-- Selector de Escenario de Audio -->
-    <div class="scenario-bar">
-      <div class="scenario-options">
-        <span style="font-size: 0.85rem; font-weight: 600; color: var(--text-muted); margin-right: 0.5rem;">ESCENARIO:</span>
-        <label class="scenario-label active" id="scenarioInPersonLabel">
-          <input type="radio" name="audioScenario" id="scenarioInPerson" value="in-person" checked />
-          <span>📱 Presencial / Móvil (Micrófono Único)</span>
-        </label>
-        <label class="scenario-label" id="scenarioVideocallLabel">
-          <input type="radio" name="audioScenario" id="scenarioVideocall" value="videocall" />
-          <span>💻 Videollamada (Doble Canal: Micrófono + Zoom/Meet)</span>
-        </label>
+    <!-- Scenario Selection Bar (Segmented Control) -->
+    <section class="scenario-panel">
+      <div class="scenario-segmented-control">
+        <span class="control-label">Escenario de Audio:</span>
+        <div class="segmented-tabs">
+          <label class="segmented-tab active" id="scenarioInPersonLabel">
+            <input type="radio" name="audioScenario" id="scenarioInPerson" value="in-person" checked />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
+            </svg>
+            <span>Presencial / Microfono Unico</span>
+          </label>
+          <label class="segmented-tab" id="scenarioVideocallLabel">
+            <input type="radio" name="audioScenario" id="scenarioVideocall" value="videocall" />
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>
+            </svg>
+            <span>Videollamada Doble Canal (Zoom / Meet)</span>
+          </label>
+        </div>
       </div>
-      <div id="videocallControls" style="display: none; align-items: center; gap: 0.5rem;">
-        <button id="connectMeetAudioBtn" class="btn-videocall">
-          📺 Capturar Audio de Reunión (Pestaña)
+
+      <div id="videocallControls" class="videocall-actions" style="display: none;">
+        <button id="connectMeetAudioBtn" class="btn-capture">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polygon points="5 3 19 12 5 21 5 3"/>
+          </svg>
+          <span>Capturar Audio Remoto (Pestana)</span>
         </button>
-        <span id="meetAudioStatus" style="font-size: 0.8rem; color: var(--text-muted);">Inactivo</span>
+        <span id="meetAudioStatus" class="audio-status-chip">Inactivo</span>
       </div>
-    </div>
+    </section>
 
-    <div class="session-bar">
-      <div class="session-info">
-        <div class="speaker-badge badge-a">
-          <span>🗣️ Carlos</span>
-          <span style="font-size: 0.75rem; background: rgba(56, 189, 248, 0.2); padding: 2px 6px; border-radius: 4px;">ES</span>
+    <!-- Session Participants & Audio Controls Bar -->
+    <section class="session-strip">
+      <div class="participants-group">
+        <div class="participant-chip chip-speaker-a">
+          <span class="participant-name">Carlos</span>
+          <span class="lang-tag">ES</span>
         </div>
-        <span style="color: var(--text-muted);">↔️</span>
-        <div class="speaker-badge badge-b">
-          <span>🗣️ Alice</span>
-          <span style="font-size: 0.75rem; background: rgba(192, 132, 252, 0.2); padding: 2px 6px; border-radius: 4px;">EN</span>
+        <div class="exchange-indicator">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>
+          </svg>
+        </div>
+        <div class="participant-chip chip-speaker-b">
+          <span class="participant-name">Alice</span>
+          <span class="lang-tag">EN</span>
         </div>
       </div>
 
-      <div style="display: flex; gap: 1rem; align-items: center;">
-        <label style="font-size: 0.85rem; color: var(--text-muted); display: flex; align-items: center; gap: 0.4rem;">
+      <div class="session-toggles">
+        <label class="toggle-control">
           <input type="checkbox" id="audioPlaybackToggle" checked />
-          Voz Supertonic (Audio)
+          <span class="toggle-slider"></span>
+          <span class="toggle-text">Voz Sintetizada (Supertonic TTS)</span>
         </label>
-        <button id="clearFeedBtn" style="padding: 0.4rem 0.8rem; background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-muted); border-radius: 6px; cursor: pointer;">Limpiar</button>
+        <button id="clearFeedBtn" class="btn-subtle" title="Limpiar feed de la sesion">Limpiar Transmision</button>
       </div>
-    </div>
+    </section>
 
+    <!-- Split-View Workspace -->
     <div class="workspace-grid">
-      <!-- Columna Izquierda: Teleprompter y Controles -->
-      <div class="teleprompter-pane">
-        <div class="teleprompter-container">
-          <div class="teleprompter-header">
-            <span>TRANSMISIÓN EN VIVO (TELEPROMPTER)</span>
-            <span id="latencyDisplay">Latencia: ~350ms (ONNX CPU)</span>
+      <!-- Left Column: Teleprompter & Speech Capture -->
+      <section class="teleprompter-column">
+        <div class="card-panel teleprompter-panel">
+          <div class="panel-header">
+            <div class="panel-title">
+              <span class="section-badge">TELEPROMPTER</span>
+              <span>Subtitulos y Traduccion Simultanea</span>
+            </div>
+            <div id="latencyDisplay" class="latency-chip">Latencia: ~350ms (ONNX CPU)</div>
           </div>
-          <div id="feed" class="feed">
-            <div style="text-align: center; color: var(--text-muted); margin-top: 3rem;">
-              <p>Presioná el botón de hablar o iniciá la transmisión de voz.</p>
-              <p style="font-size: 0.85rem; margin-top: 0.5rem;">Las notas y subtítulos traducidos aparecerán aquí en tiempo real.</p>
+
+          <div id="feed" class="feed-container">
+            <div class="feed-empty-state">
+              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="opacity: 0.4; margin-bottom: 0.8rem;">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
+              </svg>
+              <p>Manten presionado el boton de voz para hablar.</p>
+              <span>Las transcripciones originales y traducciones en vivo apareceran aqui.</span>
             </div>
           </div>
         </div>
 
-        <div class="controls-bar">
-          <button id="recordBtn" class="btn-record">
-            <span id="recordIcon">🎙️</span>
-            <span id="recordText">Presionar para Hablar (ES)</span>
+        <div class="voice-controls-dock">
+          <button id="recordBtn" class="btn-voice-record">
+            <div class="record-pulse-ring"></div>
+            <span id="recordIcon" class="record-icon-slot">
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
+              </svg>
+            </span>
+            <span id="recordText" class="record-label">Presionar para Hablar (ES)</span>
           </button>
         </div>
-      </div>
+      </section>
 
-      <!-- Columna Derecha: Panel Zoom AI Companion en Vivo -->
-      <div class="companion-pane">
-        <div class="companion-card">
-          <div class="companion-header">
-            <div style="display: flex; align-items: center; gap: 0.6rem;">
-              <span style="font-size: 1.4rem;">🤖</span>
+      <!-- Right Column: Zoom AI Companion Live Panel -->
+      <aside class="companion-column">
+        <div class="card-panel companion-panel">
+          <div class="companion-top-bar">
+            <div class="companion-heading">
+              <div class="ai-badge-icon">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
+                </svg>
+              </div>
               <div>
-                <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">AI Companion</div>
-                <div style="font-size: 0.75rem; color: var(--success-color); display: flex; align-items: center; gap: 0.3rem;">
-                  <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--success-color);"></span>
+                <div class="companion-title">AI Companion</div>
+                <div class="companion-live-status">
+                  <span class="live-dot"></span>
                   Escuchando notas en vivo
                 </div>
               </div>
             </div>
-            <button id="catchUpBtn" class="btn-catchup" title="¿Qué me perdí en los últimos minutos?">
-              ⚡ ¿Qué me perdí?
+
+            <button id="catchUpBtn" class="btn-catchup" title="Sintetizar lo ocurrido en los ultimos minutos">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+              </svg>
+              <span>Ponerse al Dia</span>
             </button>
           </div>
 
-          <!-- Banner de Tema Actual -->
-          <div class="companion-topic-banner">
-            <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Tema en discusión:</span>
-            <div id="liveTopicText" style="font-size: 0.95rem; font-weight: 600; color: var(--accent-cyan); margin-top: 0.2rem;">Inicio de la reunión</div>
+          <!-- Current Topic Banner -->
+          <div class="topic-callout">
+            <div class="callout-eyebrow">Tema en Discusion</div>
+            <div id="liveTopicText" class="topic-title">Inicio de la reunion</div>
           </div>
 
-          <!-- Puntos Clave en Vivo -->
-          <div class="companion-section">
-            <div class="companion-section-header">
-              <span>📌 Conclusiones y Puntos Clave</span>
-              <button id="refreshLiveNotesBtn" class="btn-tiny-refresh" title="Forzar actualización de notas">🔄</button>
+          <!-- Key Takeaways Section -->
+          <div class="companion-block">
+            <div class="block-header">
+              <span class="block-title">Conclusiones y Puntos Clave</span>
+              <button id="refreshLiveNotesBtn" class="btn-icon-subtle" title="Actualizar notas">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/>
+                </svg>
+              </button>
             </div>
-            <ul id="liveTakeawaysList" class="live-takeaways-list">
-              <li class="empty-hint">El asistente está escuchando activamente para anotar los puntos importantes...</li>
+            <ul id="liveTakeawaysList" class="live-notes-list">
+              <li class="empty-hint">El asistente esta escuchando activamente para sintetizar los acuerdos...</li>
             </ul>
           </div>
 
-          <!-- Compromisos y Tareas en Vivo -->
-          <div class="companion-section">
-            <div class="companion-section-header">
-              <span>✅ Compromisos Detectados (Next Steps)</span>
+          <!-- Action Items Section -->
+          <div class="companion-block">
+            <div class="block-header">
+              <span class="block-title">Compromisos Detectados (Next Steps)</span>
             </div>
             <ul id="liveActionItemsList" class="live-action-list">
-              <li class="empty-hint">Aún no se han detectado compromisos o tareas explícitas.</li>
+              <li class="empty-hint">Aun no se han detectado compromisos o tareas explicitas.</li>
             </ul>
           </div>
 
-          <!-- Popover / Recuadro de Catch Me Up -->
-          <div id="catchUpBox" class="catchup-box" style="display: none;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
-              <strong style="color: var(--accent-cyan); font-size: 0.85rem;">⚡ Resumen Rápido (Catch Me Up):</strong>
-              <button id="closeCatchUpBtn" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem;">&times;</button>
+          <!-- Catch Me Up Drawer / Box -->
+          <div id="catchUpBox" class="catchup-drawer" style="display: none;">
+            <div class="catchup-header">
+              <div class="catchup-title">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                <span>Resumen Ejecutivo Rapido:</span>
+              </div>
+              <button id="closeCatchUpBtn" class="btn-close-compact">&times;</button>
             </div>
-            <div id="catchUpText" style="font-size: 0.85rem; line-height: 1.5; color: var(--text-main);"></div>
+            <div id="catchUpText" class="catchup-body"></div>
           </div>
         </div>
-      </div>
+      </aside>
     </div>
   </main>
 
-
-  <!-- Modal de Búsqueda Histórica FTS5 -->
+  <!-- FTS5 Historical Search Modal -->
   <div id="searchModal" class="modal-backdrop" style="display: none;">
-    <div class="modal-content" style="max-width: 750px;">
-      <div class="modal-header">
-        <h2>🔍 Búsqueda Histórica en Memoria (SQLite FTS5)</h2>
-        <button id="closeSearchModalBtn" class="btn-close">&times;</button>
-      </div>
-      <div class="modal-body">
-        <div style="display: flex; gap: 0.5rem; margin-bottom: 1rem;">
-          <input type="text" id="searchQueryInput" placeholder="Escribe para buscar términos, acuerdos o frases..." style="flex: 1; padding: 0.7rem 1rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 0.95rem;" />
-          <input type="text" id="searchTopicInput" placeholder="Tema (opcional, ej: proyectos/janus)" style="width: 220px; padding: 0.7rem 1rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 8px; color: var(--text-main); font-size: 0.95rem;" />
-          <button id="executeSearchBtn" class="btn-primary" style="padding: 0.7rem 1.2rem;">Buscar</button>
+    <div class="modal-window modal-wide">
+      <div class="modal-head">
+        <div class="modal-title-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+          </svg>
+          <h3>Busqueda Historica en Memoria (SQLite FTS5)</h3>
         </div>
-        <div id="searchResultsList" style="max-height: 400px; overflow-y: auto; display: flex; flex-direction: column; gap: 0.8rem;">
-          <div style="text-align: center; color: var(--text-muted); padding: 2rem;">Ingresá un término para buscar en todas las reuniones pasadas.</div>
+        <button id="closeSearchModalBtn" class="btn-close-modal">&times;</button>
+      </div>
+      <div class="modal-content-area">
+        <div class="search-form-row">
+          <div class="input-with-icon">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
+            </svg>
+            <input type="text" id="searchQueryInput" placeholder="Buscar palabras clave, acuerdos o frases..." />
+          </div>
+          <input type="text" id="searchTopicInput" class="input-topic" placeholder="Tema (ej: arquitectura)" />
+          <button id="executeSearchBtn" class="btn-action-solid">Buscar</button>
+        </div>
+        <div id="searchResultsList" class="search-results-viewport">
+          <div class="empty-state-card">Ingresa un termino para buscar en todas las reuniones registradas.</div>
         </div>
       </div>
     </div>
   </div>
 
-  <!-- Modal de Minuta de Reunión Estilo Zoom con Chat de IA (BYOM) -->
+  <!-- Zoom-Style Minutes & BYOM AI Chat Modal -->
   <div id="notesModal" class="modal-backdrop" style="display: none;">
-    <div class="modal-content" style="max-width: 850px;">
-      <div class="modal-header">
-        <h2>📋 Minuta de Reunión (Zoom AI Companion Style)</h2>
-        <button id="closeModalBtn" class="btn-close">&times;</button>
+    <div class="modal-window modal-extra-wide">
+      <div class="modal-head">
+        <div class="modal-title-wrap">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+          </svg>
+          <h3>Minuta Ejecutiva de Reunion</h3>
+        </div>
+        <button id="closeModalBtn" class="btn-close-modal">&times;</button>
       </div>
-      <div class="modal-body">
-        <div class="notes-section">
-          <h3>📌 Resumen Ejecutivo</h3>
-          <p id="modalExecutiveSummary" style="color: var(--text-main); line-height: 1.6;"></p>
+
+      <div class="modal-content-area">
+        <div class="minutes-section">
+          <div class="section-heading">Resumen Ejecutivo</div>
+          <p id="modalExecutiveSummary" class="executive-paragraph"></p>
         </div>
 
-        <div class="notes-section">
-          <h3>🔑 Puntos Clave Discutidos</h3>
-          <ul id="modalKeyPoints" style="padding-left: 1.2rem; line-height: 1.6;"></ul>
+        <div class="minutes-section">
+          <div class="section-heading">Puntos Clave Discutidos</div>
+          <ul id="modalKeyPoints" class="styled-points-list"></ul>
         </div>
 
-        <div class="notes-section">
-          <h3>✅ Compromisos y Tareas (Action Items)</h3>
-          <ul id="modalActionItems" style="list-style: none; padding-left: 0; display: flex; flex-direction: column; gap: 0.5rem;"></ul>
+        <div class="minutes-section">
+          <div class="section-heading">Compromisos y Tareas (Action Items)</div>
+          <ul id="modalActionItems" class="styled-action-list"></ul>
         </div>
 
-        <!-- Sección BYOM: Preguntarle a la IA -->
-        <div class="notes-section" style="background: rgba(15, 23, 42, 0.6); padding: 1.2rem; border-radius: 8px; border: 1px solid var(--border-color);">
-          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.8rem;">
-            <h3>🤖 Preguntarle a la IA sobre esta reunión</h3>
-            <div style="display: flex; align-items: center; gap: 0.5rem;">
-              <span style="font-size: 0.8rem; color: var(--text-muted);">Proveedor:</span>
-              <select id="modalAiProvider" style="background: var(--card-bg); border: 1px solid var(--border-color); color: var(--text-main); border-radius: 6px; padding: 0.25rem 0.5rem; font-size: 0.85rem;">
-                <option value="ollama">Ollama (100% Local / qwen2.5:3b)</option>
+        <!-- BYOM: Conversational AI Q&A Panel -->
+        <div class="byom-interactive-box">
+          <div class="byom-header">
+            <div class="byom-title">
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
+              </svg>
+              <span>Consultar a la Inteligencia Artificial</span>
+            </div>
+            <div class="provider-selector-wrap">
+              <label for="modalAiProvider">Proveedor:</label>
+              <select id="modalAiProvider" class="select-provider">
+                <option value="ollama">Ollama Local (qwen2.5:3b)</option>
                 <option value="gemini">Google Gemini (Cloud)</option>
               </select>
             </div>
           </div>
-          <div style="display: flex; gap: 0.5rem; margin-bottom: 0.8rem;">
-            <input type="text" id="modalAiQuestionInput" placeholder="Ej: ¿Cuáles son las tareas asignadas a Carlos?..." style="flex: 1; padding: 0.6rem 0.9rem; background: var(--bg-color); border: 1px solid var(--border-color); border-radius: 6px; color: var(--text-main); font-size: 0.9rem;" />
-            <button id="modalAiAskBtn" class="btn-primary" style="padding: 0.6rem 1rem;">Preguntar</button>
+
+          <div class="byom-input-row">
+            <input type="text" id="modalAiQuestionInput" placeholder="Ej: Que plazos establecio Alice para la entrega?..." />
+            <button id="modalAiAskBtn" class="btn-action-solid">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
+              </svg>
+              <span>Consultar</span>
+            </button>
           </div>
-          <div id="modalAiAnswerBox" style="display: none; padding: 0.8rem; background: var(--bg-color); border-radius: 6px; border: 1px solid var(--border-color); font-size: 0.9rem; line-height: 1.5; color: var(--text-main);">
+
+          <div id="modalAiAnswerBox" class="byom-answer-viewport" style="display: none;">
             <div id="modalAiAnswerText"></div>
           </div>
         </div>
       </div>
-      <div class="modal-footer">
-        <button id="downloadMdBtn" class="btn-primary">📥 Descargar Markdown (.md)</button>
-        <button id="copyNotesBtn" class="btn-secondary">📋 Copiar Minuta</button>
+
+      <div class="modal-footer-actions">
+        <button id="downloadMdBtn" class="btn-action-solid">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Descargar Markdown (.md)</span>
+        </button>
+        <button id="copyNotesBtn" class="btn-action-outline">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
+          </svg>
+          <span>Copiar Minuta</span>
+        </button>
       </div>
     </div>
   </div>

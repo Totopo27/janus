@@ -153,7 +153,7 @@ def test_api_meeting_lifecycle_and_notes(tmp_path):
     res = client.get("/api/meetings/board_sync_2026/notes?format=markdown")
     assert res.status_code == 200
     assert "text/markdown" in res.headers["content-type"]
-    assert "# 📋 Minuta de Reunión: Reunión de Directorio Janus" in res.text
+    assert "# Minuta de Reunión: Reunión de Directorio Janus" in res.text
 
 
 def test_api_search_turns_and_topic_key(tmp_path):

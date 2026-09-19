@@ -192,6 +192,7 @@ function renderTurnCard(turn) {
   card.className = `turn-card ${speakerClass}`;
 
   const timeStr = new Date().toLocaleTimeString();
+  const arrowSvg = `<svg class="translation-indicator" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
 
   card.innerHTML = `
     <div class="turn-header">
@@ -199,7 +200,7 @@ function renderTurnCard(turn) {
       <span>${timeStr}</span>
     </div>
     <div class="turn-original">"${escapeHtml(turn.original_text)}"</div>
-    <div class="turn-translated">➡️ ${escapeHtml(turn.translated_text)}</div>
+    <div class="turn-translated">${arrowSvg} <span>${escapeHtml(turn.translated_text)}</span></div>
   `;
 
   feed.appendChild(card);
@@ -349,9 +350,12 @@ async function startMeetAudioCapture() {
     });
 
     meetAudioRecorder.start();
-    meetAudioStatus.textContent = "🟢 Capturando Zoom/Meet";
-    meetAudioStatus.style.color = "var(--success-color)";
-    connectMeetAudioBtn.textContent = "🛑 Detener Captura";
+    meetAudioStatus.textContent = "Capturando audio remoto";
+    meetAudioStatus.style.color = "var(--accent-emerald)";
+    connectMeetAudioBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="18" height="18" x="3" y="3" rx="2"/><path d="M9 9h6v6H9z"/></svg>
+      <span>Detener Captura</span>
+    `;
   } catch (err) {
     console.error("Error capturing meet audio:", err);
     meetAudioStatus.textContent = "Error de captura";
@@ -369,7 +373,10 @@ function stopMeetAudioCapture() {
   meetAudioStatus.textContent = "Inactivo";
   meetAudioStatus.style.color = "var(--text-muted)";
   if (connectMeetAudioBtn) {
-    connectMeetAudioBtn.textContent = "📺 Capturar Audio de Reunión (Pestaña)";
+    connectMeetAudioBtn.innerHTML = `
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+      <span>Capturar Audio Remoto (Pestana)</span>
+    `;
   }
 }
 
@@ -454,7 +461,7 @@ if (searchQueryInput) {
 if (finalizeBtn) {
   finalizeBtn.addEventListener("click", async () => {
     finalizeBtn.disabled = true;
-    finalizeBtn.textContent = "Generando Minuta...";
+    finalizeBtn.innerHTML = `<span>Generando Minuta...</span>`;
 
     try {
       const res = await fetch(`/api/meetings/${SESSION_ID}/finalize`, { method: "POST" });
@@ -491,7 +498,10 @@ if (finalizeBtn) {
       alert("Error generando minuta: " + err.message);
     } finally {
       finalizeBtn.disabled = false;
-      finalizeBtn.textContent = "📋 Finalizar y Minuta (Zoom Style)";
+      finalizeBtn.innerHTML = `
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <span>Generar Minuta</span>
+      `;
     }
   });
 }
@@ -514,8 +524,16 @@ if (copyNotesBtn) {
       const res = await fetch(`/api/meetings/${SESSION_ID}/notes?format=markdown`);
       const md = await res.text();
       await navigator.clipboard.writeText(md);
-      copyNotesBtn.textContent = "✅ ¡Copiado!";
-      setTimeout(() => { copyNotesBtn.textContent = "📋 Copiar Minuta"; }, 2000);
+      copyNotesBtn.innerHTML = `
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <span>Copiado al Portapapeles</span>
+      `;
+      setTimeout(() => {
+        copyNotesBtn.innerHTML = `
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          <span>Copiar Minuta</span>
+        `;
+      }, 2000);
     } catch (err) {
       alert("No se pudo copiar: " + err.message);
     }
@@ -560,10 +578,13 @@ async function askAiAboutMeeting() {
     const data = await res.json();
     modalAiAnswerText.innerHTML = `<strong>Respuesta (${escapeHtml(data.provider)}):</strong><br/>${escapeHtml(data.answer).replace(/\n/g, "<br/>")}`;
   } catch (err) {
-    modalAiAnswerText.textContent = "⚠️ " + err.message;
+    modalAiAnswerText.textContent = "Error: " + err.message;
   } finally {
     modalAiAskBtn.disabled = false;
-    modalAiAskBtn.textContent = "Preguntar";
+    modalAiAskBtn.innerHTML = `
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      <span>Consultar</span>
+    `;
   }
 }
 
@@ -585,7 +606,7 @@ function renderLiveNotes(data) {
 
   if (data.key_takeaways && liveTakeawaysList) {
     if (data.key_takeaways.length === 0) {
-      liveTakeawaysList.innerHTML = `<li class="empty-hint">El asistente está escuchando activamente para anotar los puntos importantes...</li>`;
+      liveTakeawaysList.innerHTML = `<li class="empty-hint">El asistente esta escuchando activamente para sintetizar los acuerdos...</li>`;
     } else {
       liveTakeawaysList.innerHTML = "";
       data.key_takeaways.forEach(pt => {
@@ -598,7 +619,7 @@ function renderLiveNotes(data) {
 
   if (data.action_items && liveActionItemsList) {
     if (data.action_items.length === 0) {
-      liveActionItemsList.innerHTML = `<li class="empty-hint">Aún no se han detectado compromisos o tareas explícitas.</li>`;
+      liveActionItemsList.innerHTML = `<li class="empty-hint">Aun no se han detectado compromisos o tareas explicitas.</li>`;
     } else {
       liveActionItemsList.innerHTML = "";
       data.action_items.forEach(itm => {
@@ -626,9 +647,9 @@ async function loadInitialLiveNotes() {
 if (catchUpBtn) {
   catchUpBtn.addEventListener("click", async () => {
     catchUpBtn.disabled = true;
-    catchUpBtn.textContent = "⚡ Resumiendo...";
+    catchUpBtn.innerHTML = `<span>Sintetizando...</span>`;
     catchUpBox.style.display = "block";
-    catchUpText.textContent = "El asistente Zoom AI Companion está revisando los últimos minutos de la conversación...";
+    catchUpText.textContent = "El asistente Zoom AI Companion esta revisando los ultimos minutos de la conversacion...";
 
     try {
       const res = await fetch(`/api/meetings/${SESSION_ID}/catch-up`, {
@@ -640,10 +661,13 @@ if (catchUpBtn) {
       const data = await res.json();
       catchUpText.innerHTML = escapeHtml(data.summary).replace(/\n/g, "<br/>");
     } catch (err) {
-      catchUpText.textContent = "⚠️ " + err.message;
+      catchUpText.textContent = "Error: " + err.message;
     } finally {
       catchUpBtn.disabled = false;
-      catchUpBtn.textContent = "⚡ ¿Qué me perdí?";
+      catchUpBtn.innerHTML = `
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <span>Ponerse al Dia</span>
+      `;
     }
   });
 }
