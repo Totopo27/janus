@@ -132,7 +132,20 @@ class LiveNotetakerService:
                             for a in current_notes.action_items
                         ],
                     )
-                    self.broadcaster.broadcast(event)
+                    if hasattr(self.broadcaster, "broadcast_event"):
+                        try:
+                            import asyncio
+                            loop = asyncio.get_running_loop()
+                            res = self.broadcaster.broadcast_event(meeting_id, event)
+                            if asyncio.iscoroutine(res):
+                                loop.create_task(res)
+                        except RuntimeError:
+                            pass
+                    if hasattr(self.broadcaster, "broadcast"):
+                        try:
+                            self.broadcaster.broadcast(event)
+                        except Exception:
+                            pass
 
         except Exception as e:
             logger.error("Failed to update live notes with LLM: %s", e)

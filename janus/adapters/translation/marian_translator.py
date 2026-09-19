@@ -109,6 +109,38 @@ class MarianTranslator(ITranslator):
             "no": "No",
         }
 
+        # Try local Ollama LLM translation if available
+        try:
+            import urllib.request
+            import json
+            prompt = f"Translate the following text accurately from {source_lang.upper()} to {target_lang.upper()}. Output ONLY the translated text without commentary, explanation, or quotes:\n\n{clean_text}"
+            req_data = json.dumps({
+                "model": "qwen2.5:3b",
+                "prompt": prompt,
+                "stream": False,
+                "options": {"temperature": 0.1}
+            }).encode("utf-8")
+            req = urllib.request.Request(
+                "http://localhost:11434/api/generate",
+                data=req_data,
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=3.0) as resp:
+                res_json = json.loads(resp.read().decode("utf-8"))
+                translated = res_json.get("response", "").strip()
+                if translated:
+                    elapsed = (time.perf_counter() - start) * 1000.0
+                    logger.info(f"Translated via Ollama ({source_lang} -> {target_lang}): '{clean_text}' -> '{translated}'")
+                    return TranslationResult(
+                        source_text=clean_text,
+                        source_lang=source_lang,
+                        translated_text=translated,
+                        target_lang=target_lang,
+                        latency_ms=round(elapsed, 2),
+                    )
+        except Exception as oe:
+            logger.debug(f"Ollama local translation fallback skipped: {oe}")
+
         normalized = clean_text.lower()
         if source_lang.startswith("es") and target_lang.startswith("en"):
             translated = es_to_en.get(normalized, f"[EN] {clean_text}")

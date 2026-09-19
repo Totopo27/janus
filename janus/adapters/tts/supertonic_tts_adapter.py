@@ -59,18 +59,24 @@ class SupertonicTtsAdapter(ISpeechSynthesizer):
                 voice_id=voice_style or "default",
             )
 
-        # In production with installed weights:
+        # If engine is in fallback mode (no supertonic ONNX model weights), return empty/silent audio bytes
+        if self._engine == "fallback":
+            logger.info("Supertonic TTS in fallback mode: returning silent audio buffer (no beep tone)")
+            return SynthesisResult(
+                audio_bytes=b"",
+                sample_rate=self.sample_rate,
+                duration_seconds=0.0,
+                format="wav",
+                voice_id=voice_style or "default",
+            )
+
         try:
-            # Using soundfile or supertonic native pipeline
             import soundfile as sf
             import numpy as np
 
-            # If real model exists in self.model_dir, invoke inference; otherwise generate a clean audio tone/chime
             duration = max(0.5, len(clean_text) * 0.06)
             total_samples = int(self.sample_rate * duration)
-            # Create smooth audible sine tone modulated as speech representation for testing/fallback
-            t = np.linspace(0, duration, total_samples, endpoint=False)
-            audio_wave = 0.2 * np.sin(2 * np.pi * 440 * t)
+            audio_wave = np.zeros(total_samples, dtype=np.float32)
 
             buffer = io.BytesIO()
             sf.write(buffer, audio_wave, self.sample_rate, format="WAV", subtype="PCM_16")

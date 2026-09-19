@@ -269,15 +269,48 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// 5. Microphone Recording (Toggle On/Off for Carlos / Speaker A)
+// Active Speaker Selector (Carlos [ES] vs Alice [EN])
+let currentSpeakerId = "carlos";
+const chipSpeakerA = document.querySelector(".chip-speaker-a");
+const chipSpeakerB = document.querySelector(".chip-speaker-b");
+
+if (chipSpeakerA && chipSpeakerB) {
+  chipSpeakerA.style.cursor = "pointer";
+  chipSpeakerB.style.cursor = "pointer";
+  chipSpeakerA.style.border = "2px solid var(--accent-blue)";
+
+  chipSpeakerA.addEventListener("click", () => {
+    currentSpeakerId = "carlos";
+    chipSpeakerA.style.border = "2px solid var(--accent-blue)";
+    chipSpeakerB.style.border = "none";
+    if (recordText) {
+      recordText.textContent = isLocalRecording ? "Detener Grabación (Carlos - ES)" : "Iniciar Grabación (Carlos - ES)";
+    }
+    console.log("[AudioRecorder] Hablante activo seleccionado: Carlos (ES)");
+  });
+
+  chipSpeakerB.addEventListener("click", () => {
+    currentSpeakerId = "alice";
+    chipSpeakerB.style.border = "2px solid var(--accent-blue)";
+    chipSpeakerA.style.border = "none";
+    if (recordText) {
+      recordText.textContent = isLocalRecording ? "Detener Grabación (Alice - EN)" : "Iniciar Grabación (Alice - EN)";
+    }
+    console.log("[AudioRecorder] Hablante activo seleccionado: Alice (EN)");
+  });
+}
+
+// 5. Microphone Recording (Toggle On/Off)
 async function startLocalRecording() {
   try {
-    if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
-      console.warn("[AudioRecorder] Socket de audio local no está conectado. Reintentando conexión...");
-      connectLocalMicStream();
+    const activeSocket = currentSpeakerId === "alice" ? meetAudioSocket : localMicSocket;
+    if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
+      console.warn(`[AudioRecorder] Socket de audio para ${currentSpeakerId} no está conectado. Reintentando...`);
+      if (currentSpeakerId === "alice") connectMeetAudioStream();
+      else connectLocalMicStream();
     }
 
-    console.log("[AudioRecorder] Solicitando acceso al micrófono...");
+    console.log(`[AudioRecorder] Solicitando acceso al micrófono (Hablante: ${currentSpeakerId})...`);
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     localAudioChunks = [];
     localMicRecorder = new MediaRecorder(stream);
@@ -304,13 +337,14 @@ async function startLocalRecording() {
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
 
-      console.log(`[AudioRecorder] Enviando audio base64 (${base64Audio.length} caracteres) al servidor...`);
+      console.log(`[AudioRecorder] Enviando audio base64 de ${currentSpeakerId} (${base64Audio.length} caracteres) al servidor...`);
 
-      if (localMicSocket && localMicSocket.readyState === WebSocket.OPEN) {
-        localMicSocket.send(JSON.stringify({ audio_base64: base64Audio }));
-        console.log("[AudioRecorder] Audio enviado exitosamente por WebSocket");
+      const targetSocket = currentSpeakerId === "alice" ? meetAudioSocket : localMicSocket;
+      if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
+        targetSocket.send(JSON.stringify({ audio_base64: base64Audio }));
+        console.log(`[AudioRecorder] Audio de ${currentSpeakerId} enviado exitosamente por WebSocket`);
       } else {
-        console.error("[AudioRecorder] No se pudo enviar el audio: WebSocket cerrado o no listo", localMicSocket ? localMicSocket.readyState : "null");
+        console.error(`[AudioRecorder] No se pudo enviar el audio de ${currentSpeakerId}: WebSocket cerrado o no listo`);
       }
 
       stream.getTracks().forEach(track => track.stop());
@@ -319,8 +353,9 @@ async function startLocalRecording() {
     localMicRecorder.start();
     isLocalRecording = true;
     recordBtn.classList.add("recording");
-    recordText.textContent = "Detener Grabación (ES)";
-    console.log("[AudioRecorder] Grabación iniciada en modo Toggle (Escuchando...)");
+    const labelLang = currentSpeakerId === "alice" ? "Alice - EN" : "Carlos - ES";
+    recordText.textContent = `Detener Grabación (${labelLang})`;
+    console.log(`[AudioRecorder] Grabación iniciada en modo Toggle para ${currentSpeakerId}`);
   } catch (err) {
     console.error("[AudioRecorder] Error accediendo al micrófono:", err);
     alert("No se pudo acceder al micrófono: " + err.message);
@@ -333,7 +368,8 @@ function stopLocalRecording() {
     localMicRecorder.stop();
     isLocalRecording = false;
     recordBtn.classList.remove("recording");
-    recordText.textContent = "Iniciar Grabación (ES)";
+    const labelLang = currentSpeakerId === "alice" ? "Alice - EN" : "Carlos - ES";
+    recordText.textContent = `Iniciar Grabación (${labelLang})`;
   }
 }
 
