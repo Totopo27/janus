@@ -119,6 +119,7 @@ def create_app(
         app.mount("/static", StaticFiles(directory=web_dir), name="static")
 
         @app.get("/", include_in_schema=False)
+        @app.get("/index.html", include_in_schema=False)
         def serve_ui():
             index_path = os.path.join(web_dir, "index.html")
             if os.path.exists(index_path):
