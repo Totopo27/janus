@@ -132,6 +132,7 @@ class Meeting:
     topic_key: Optional[str] = None
     turns: List[ConversationTurn] = field(default_factory=list)
     summary: Optional[MeetingSummary] = None
+    live_notes: Optional['LiveMeetingNotes'] = None
     status: str = "active"  # "active" | "completed"
     created_at: float = field(default_factory=time.time)
     ended_at: Optional[float] = None
@@ -171,5 +172,17 @@ class ChatMessage:
     role: str  # "system" | "user" | "assistant"
     content: str
     timestamp: float = field(default_factory=time.time)
+
+
+@dataclass
+class LiveMeetingNotes:
+    """Real-time structured meeting notes continuously updated by AI Companion."""
+    meeting_id: str
+    current_topic: str = "Inicio de la reunión"
+    key_takeaways: List[str] = field(default_factory=list)
+    action_items: List[ActionItem] = field(default_factory=list)
+    last_processed_turn_index: int = 0
+    updated_at: float = field(default_factory=time.time)
+
 
 

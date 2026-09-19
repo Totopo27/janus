@@ -9,6 +9,7 @@ from janus.services.session_service import SessionService
 from janus.services.pipeline_orchestrator import PipelineOrchestrator
 from janus.services.meeting_notes_service import MeetingNotesService
 from janus.services.meeting_chat_service import MeetingChatService
+from janus.services.live_notetaker_service import LiveNotetakerService
 from janus.adapters.llm.factory import LLMProviderFactory
 from janus.adapters.storage.sqlite_repository import SqliteMeetingRepository
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
@@ -26,6 +27,7 @@ def create_app(
     meeting_repo: IMeetingRepository = None,
     notes_service: MeetingNotesService = None,
     chat_service: MeetingChatService = None,
+    live_notetaker: LiveNotetakerService = None,
     llm_provider: ILLMProvider = None,
     db_path: str = "janus.db",
 ) -> FastAPI:
@@ -50,6 +52,10 @@ def create_app(
     if notes_service is None:
         notes_service = MeetingNotesService(repository=meeting_repo)
 
+    # Initialize default services if not injected
+    if broadcaster is None:
+        broadcaster = WebSocketBroadcaster()
+
     # Initialize BYOM & Chat service
     llm_factory = LLMProviderFactory()
     if llm_provider is None:
@@ -57,9 +63,15 @@ def create_app(
     if chat_service is None:
         chat_service = MeetingChatService(repository=meeting_repo, llm_provider=llm_provider)
 
-    # Initialize default services if not injected
-    if broadcaster is None:
-        broadcaster = WebSocketBroadcaster()
+    # Initialize Zoom AI Companion Live Notetaker
+    if live_notetaker is None:
+        live_notetaker = LiveNotetakerService(
+            repository=meeting_repo,
+            llm_provider=llm_provider,
+            broadcaster=broadcaster,
+            batch_size=3,
+        )
+
     if session_service is None:
         session_service = SessionService()
     if orchestrator is None:
@@ -72,6 +84,7 @@ def create_app(
             tts_engine=tts,
             broadcaster=broadcaster,
             storage_repo=meeting_repo,
+            live_notetaker=live_notetaker,
         )
 
     # Health check
@@ -86,9 +99,11 @@ def create_app(
             meeting_repo=meeting_repo,
             notes_service=notes_service,
             chat_service=chat_service,
+            live_notetaker=live_notetaker,
             llm_factory=llm_factory,
         )
     )
+
     app.include_router(
         create_websocket_router(
             session_service=session_service,

@@ -1,6 +1,6 @@
 import logging
 import uuid
-from typing import Optional
+from typing import Optional, Any
 from janus.domain.models import (
     AudioChunk,
     ConversationTurn,
@@ -36,6 +36,7 @@ class PipelineOrchestrator:
         broadcaster: Optional[IEventBroadcaster] = None,
         vad_engine: Optional[IVoiceActivityDetector] = None,
         storage_repo: Optional[IMeetingRepository] = None,
+        live_notetaker: Optional[Any] = None,
     ) -> None:
         self.stt = stt_engine
         self.mt = translation_engine
@@ -43,6 +44,8 @@ class PipelineOrchestrator:
         self.broadcaster = broadcaster
         self.vad = vad_engine
         self.storage = storage_repo
+        self.live_notetaker = live_notetaker
+
 
     async def process_turn(
         self,
@@ -168,4 +171,20 @@ class PipelineOrchestrator:
                 ),
             )
 
+        # 7. Notify Live Notetaker (Zoom AI Companion) in background
+        if self.live_notetaker:
+            try:
+                import asyncio
+                # If there's an active running loop, schedule as async task, else call directly
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    loop.create_task(
+                        asyncio.to_thread(self.live_notetaker.process_turn, session.session_id, turn)
+                    )
+                else:
+                    self.live_notetaker.process_turn(session.session_id, turn)
+            except Exception as e:
+                logger.debug(f"Live notetaker background dispatch skipped or failed: {e}")
+
         return turn
+

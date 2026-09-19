@@ -53,6 +53,17 @@ const modalAiAskBtn = document.getElementById("modalAiAskBtn");
 const modalAiAnswerBox = document.getElementById("modalAiAnswerBox");
 const modalAiAnswerText = document.getElementById("modalAiAnswerText");
 
+// Zoom AI Companion Live Notetaker Elements
+const liveTopicText = document.getElementById("liveTopicText");
+const liveTakeawaysList = document.getElementById("liveTakeawaysList");
+const liveActionItemsList = document.getElementById("liveActionItemsList");
+const catchUpBtn = document.getElementById("catchUpBtn");
+const catchUpBox = document.getElementById("catchUpBox");
+const catchUpText = document.getElementById("catchUpText");
+const closeCatchUpBtn = document.getElementById("closeCatchUpBtn");
+const refreshLiveNotesBtn = document.getElementById("refreshLiveNotesBtn");
+
+
 // 1. Initialize or Ensure Session via REST API
 async function initSession() {
   try {
@@ -155,10 +166,16 @@ function handleIncomingEvent(payload) {
     return;
   }
 
+  if (payload.event_name === "LiveNotesUpdated") {
+    renderLiveNotes(payload.data || payload);
+    return;
+  }
+
   if (payload.event_name === "TurnCompleted") {
     const turnData = payload.data;
     renderTurnCard(turnData);
   }
+
 }
 
 function renderTurnCard(turn) {
@@ -559,9 +576,106 @@ if (modalAiQuestionInput) {
   });
 }
 
+// 11. Zoom AI Companion Live Notes & Catch Me Up Controller
+function renderLiveNotes(data) {
+  if (!data) return;
+  if (data.current_topic && liveTopicText) {
+    liveTopicText.textContent = data.current_topic;
+  }
+
+  if (data.key_takeaways && liveTakeawaysList) {
+    if (data.key_takeaways.length === 0) {
+      liveTakeawaysList.innerHTML = `<li class="empty-hint">El asistente está escuchando activamente para anotar los puntos importantes...</li>`;
+    } else {
+      liveTakeawaysList.innerHTML = "";
+      data.key_takeaways.forEach(pt => {
+        const li = document.createElement("li");
+        li.textContent = pt;
+        liveTakeawaysList.appendChild(li);
+      });
+    }
+  }
+
+  if (data.action_items && liveActionItemsList) {
+    if (data.action_items.length === 0) {
+      liveActionItemsList.innerHTML = `<li class="empty-hint">Aún no se han detectado compromisos o tareas explícitas.</li>`;
+    } else {
+      liveActionItemsList.innerHTML = "";
+      data.action_items.forEach(itm => {
+        const li = document.createElement("li");
+        const due = itm.due_hint ? ` (Plazo: ${escapeHtml(itm.due_hint)})` : "";
+        li.innerHTML = `<input type="checkbox" ${itm.completed ? "checked" : ""} /> <span><strong>${escapeHtml(itm.assignee)}:</strong> ${escapeHtml(itm.task)}${due}</span>`;
+        liveActionItemsList.appendChild(li);
+      });
+    }
+  }
+}
+
+async function loadInitialLiveNotes() {
+  try {
+    const res = await fetch(`/api/meetings/${SESSION_ID}/live-notes`);
+    if (res.ok) {
+      const data = await res.json();
+      renderLiveNotes(data);
+    }
+  } catch (e) {
+    console.debug("Live notes initial load skipped:", e);
+  }
+}
+
+if (catchUpBtn) {
+  catchUpBtn.addEventListener("click", async () => {
+    catchUpBtn.disabled = true;
+    catchUpBtn.textContent = "⚡ Resumiendo...";
+    catchUpBox.style.display = "block";
+    catchUpText.textContent = "El asistente Zoom AI Companion está revisando los últimos minutos de la conversación...";
+
+    try {
+      const res = await fetch(`/api/meetings/${SESSION_ID}/catch-up`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ last_n_turns: 6 }),
+      });
+      if (!res.ok) throw new Error("No se pudo obtener el resumen");
+      const data = await res.json();
+      catchUpText.innerHTML = escapeHtml(data.summary).replace(/\n/g, "<br/>");
+    } catch (err) {
+      catchUpText.textContent = "⚠️ " + err.message;
+    } finally {
+      catchUpBtn.disabled = false;
+      catchUpBtn.textContent = "⚡ ¿Qué me perdí?";
+    }
+  });
+}
+
+if (closeCatchUpBtn) {
+  closeCatchUpBtn.addEventListener("click", () => {
+    catchUpBox.style.display = "none";
+  });
+}
+
+if (refreshLiveNotesBtn) {
+  refreshLiveNotesBtn.addEventListener("click", async () => {
+    refreshLiveNotesBtn.style.transform = "rotate(180deg)";
+    try {
+      const res = await fetch(`/api/meetings/${SESSION_ID}/live-notes/refresh`, { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        renderLiveNotes(data);
+      }
+    } catch (e) {
+      console.warn("Could not refresh live notes:", e);
+    } finally {
+      setTimeout(() => { refreshLiveNotesBtn.style.transform = "none"; }, 500);
+    }
+  });
+}
+
 // Bootstrap
 window.addEventListener("DOMContentLoaded", async () => {
   await initSession();
   connectTeleprompter();
   connectLocalMicStream();
+  await loadInitialLiveNotes();
 });
+

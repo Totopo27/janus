@@ -101,14 +101,34 @@ class LLMConfigResponse(BaseModel):
     healthy: bool
 
 
+class LiveNotesResponse(BaseModel):
+    meeting_id: str
+    current_topic: str
+    key_takeaways: List[str]
+    action_items: List[ActionItemSchema]
+    last_processed_turn_index: int
+    updated_at: float
+
+
+class CatchUpRequest(BaseModel):
+    last_n_turns: int = 6
+
+
+class CatchUpResponse(BaseModel):
+    meeting_id: str
+    summary: str
+
+
 def create_api_router(
     session_service: SessionService,
     meeting_repo: Optional[IMeetingRepository] = None,
     notes_service: Optional[MeetingNotesService] = None,
     chat_service: Optional[MeetingChatService] = None,
+    live_notetaker: Optional[Any] = None,
     llm_factory: Optional[LLMProviderFactory] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["Sessions, Meetings & BYOM"])
+
 
     # -------------------------------------------------------------
     # Session Routes (In-Memory Live Sessions)
@@ -368,6 +388,64 @@ def create_api_router(
             raise HTTPException(status_code=404, detail=str(e))
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"LLM error: {e}")
+
+    @router.get("/meetings/{meeting_id}/live-notes", response_model=LiveNotesResponse)
+    def get_live_notes(meeting_id: str):
+        """Returns real-time Zoom AI Companion structured notes (topic, takeaways, action items)."""
+        if not live_notetaker:
+            raise HTTPException(status_code=503, detail="Live notetaker service not configured")
+        notes = live_notetaker.get_live_notes(meeting_id)
+        return LiveNotesResponse(
+            meeting_id=notes.meeting_id,
+            current_topic=notes.current_topic,
+            key_takeaways=notes.key_takeaways,
+            action_items=[
+                ActionItemSchema(
+                    assignee=a.assignee,
+                    task=a.task,
+                    completed=a.completed,
+                    due_hint=a.due_hint,
+                )
+                for a in notes.action_items
+            ],
+            last_processed_turn_index=notes.last_processed_turn_index,
+            updated_at=notes.updated_at,
+        )
+
+    @router.post("/meetings/{meeting_id}/live-notes/refresh", response_model=LiveNotesResponse)
+    def refresh_live_notes(meeting_id: str):
+        """Forces an immediate synthesis update of live notes using LLM."""
+        if not live_notetaker:
+            raise HTTPException(status_code=503, detail="Live notetaker service not configured")
+        notes = live_notetaker.update_notes(meeting_id)
+        return LiveNotesResponse(
+            meeting_id=notes.meeting_id,
+            current_topic=notes.current_topic,
+            key_takeaways=notes.key_takeaways,
+            action_items=[
+                ActionItemSchema(
+                    assignee=a.assignee,
+                    task=a.task,
+                    completed=a.completed,
+                    due_hint=a.due_hint,
+                )
+                for a in notes.action_items
+            ],
+            last_processed_turn_index=notes.last_processed_turn_index,
+            updated_at=notes.updated_at,
+        )
+
+    @router.post("/meetings/{meeting_id}/catch-up", response_model=CatchUpResponse)
+    def catch_up_meeting(meeting_id: str, request: CatchUpRequest = CatchUpRequest()):
+        """Zoom AI Companion 'Catch Me Up': concise executive recap of the last few minutes."""
+        if not live_notetaker:
+            raise HTTPException(status_code=503, detail="Live notetaker service not configured")
+        summary = live_notetaker.catch_up(meeting_id=meeting_id, last_n_turns=request.last_n_turns)
+        return CatchUpResponse(
+            meeting_id=meeting_id,
+            summary=summary,
+        )
+
 
     # -------------------------------------------------------------
     # BYOM System Configuration Routes

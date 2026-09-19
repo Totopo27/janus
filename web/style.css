@@ -457,3 +457,158 @@ main {
   color: var(--text-muted);
 }
 
+/* ==========================================================================
+   Zoom AI Companion Split-View Layout & Live Notes
+   ========================================================================== */
+
+.workspace-grid {
+  display: grid;
+  grid-template-columns: 1.15fr 0.85fr;
+  gap: 1.5rem;
+  align-items: start;
+}
+
+@media (max-width: 960px) {
+  .workspace-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.teleprompter-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.companion-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.companion-card {
+  background: var(--panel-bg);
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  padding: 1.25rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.25);
+}
+
+.companion-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 0.8rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.btn-catchup {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  color: #fff;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.3);
+}
+
+.btn-catchup:hover {
+  filter: brightness(1.1);
+  transform: translateY(-1px);
+}
+
+.companion-topic-banner {
+  background: rgba(0, 242, 254, 0.07);
+  border: 1px solid rgba(0, 242, 254, 0.25);
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+}
+
+.companion-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.companion-section-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 0.8rem;
+  color: var(--accent-cyan);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.btn-tiny-refresh {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 0.85rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.btn-tiny-refresh:hover {
+  opacity: 1;
+}
+
+.live-takeaways-list,
+.live-action-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.live-takeaways-list li {
+  background: var(--card-bg);
+  border-left: 3px solid var(--accent-blue);
+  border-radius: 4px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  color: var(--text-main);
+  animation: fadeIn 0.3s ease;
+}
+
+.live-action-list li {
+  background: var(--card-bg);
+  border-left: 3px solid var(--success-color);
+  border-radius: 4px;
+  padding: 0.5rem 0.8rem;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--text-main);
+  animation: fadeIn 0.3s ease;
+}
+
+.empty-hint {
+  color: var(--text-muted) !important;
+  font-style: italic !important;
+  background: transparent !important;
+  border: none !important;
+  padding: 0.4rem 0 !important;
+}
+
+.catchup-box {
+  background: rgba(15, 23, 42, 0.95);
+  border: 1px solid var(--accent-cyan);
+  border-radius: 8px;
+  padding: 0.9rem;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.5);
+  animation: fadeIn 0.2s ease;
+}
+
+

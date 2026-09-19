@@ -68,3 +68,23 @@ class TurnCompletedEvent(DomainEvent):
     target_lang: str = ""
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     event_name: str = "TurnCompleted"
+
+
+@dataclass(frozen=True)
+class LiveNotesUpdatedEvent(DomainEvent):
+    meeting_id: str = ""
+    current_topic: str = ""
+    key_takeaways: list[str] = field(default_factory=list)
+    action_items: list[dict] = field(default_factory=list)
+    event_name: str = "LiveNotesUpdated"
+
+    def to_dict(self) -> Dict[str, Any]:
+        d = super().to_dict()
+        d.update({
+            "meeting_id": self.meeting_id,
+            "current_topic": self.current_topic,
+            "key_takeaways": self.key_takeaways,
+            "action_items": self.action_items,
+        })
+        return d
+

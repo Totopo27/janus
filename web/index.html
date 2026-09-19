@@ -70,26 +70,89 @@
       </div>
     </div>
 
-    <div class="teleprompter-container">
-      <div class="teleprompter-header">
-        <span>TRANSMISIÓN EN VIVO (TELEPROMPTER)</span>
-        <span id="latencyDisplay">Latencia: ~350ms (ONNX CPU)</span>
+    <div class="workspace-grid">
+      <!-- Columna Izquierda: Teleprompter y Controles -->
+      <div class="teleprompter-pane">
+        <div class="teleprompter-container">
+          <div class="teleprompter-header">
+            <span>TRANSMISIÓN EN VIVO (TELEPROMPTER)</span>
+            <span id="latencyDisplay">Latencia: ~350ms (ONNX CPU)</span>
+          </div>
+          <div id="feed" class="feed">
+            <div style="text-align: center; color: var(--text-muted); margin-top: 3rem;">
+              <p>Presioná el botón de hablar o iniciá la transmisión de voz.</p>
+              <p style="font-size: 0.85rem; margin-top: 0.5rem;">Las notas y subtítulos traducidos aparecerán aquí en tiempo real.</p>
+            </div>
+          </div>
+        </div>
+
+        <div class="controls-bar">
+          <button id="recordBtn" class="btn-record">
+            <span id="recordIcon">🎙️</span>
+            <span id="recordText">Presionar para Hablar (ES)</span>
+          </button>
+        </div>
       </div>
-      <div id="feed" class="feed">
-        <div style="text-align: center; color: var(--text-muted); margin-top: 3rem;">
-          <p>Presioná el botón de hablar o iniciá la transmisión de voz.</p>
-          <p style="font-size: 0.85rem; margin-top: 0.5rem;">Las notas y subtítulos traducidos aparecerán aquí en tiempo real.</p>
+
+      <!-- Columna Derecha: Panel Zoom AI Companion en Vivo -->
+      <div class="companion-pane">
+        <div class="companion-card">
+          <div class="companion-header">
+            <div style="display: flex; align-items: center; gap: 0.6rem;">
+              <span style="font-size: 1.4rem;">🤖</span>
+              <div>
+                <div style="font-weight: 700; font-size: 0.95rem; color: var(--text-main);">AI Companion</div>
+                <div style="font-size: 0.75rem; color: var(--success-color); display: flex; align-items: center; gap: 0.3rem;">
+                  <span style="display: inline-block; width: 6px; height: 6px; border-radius: 50%; background: var(--success-color);"></span>
+                  Escuchando notas en vivo
+                </div>
+              </div>
+            </div>
+            <button id="catchUpBtn" class="btn-catchup" title="¿Qué me perdí en los últimos minutos?">
+              ⚡ ¿Qué me perdí?
+            </button>
+          </div>
+
+          <!-- Banner de Tema Actual -->
+          <div class="companion-topic-banner">
+            <span style="font-size: 0.75rem; color: var(--text-muted); text-transform: uppercase; font-weight: 600;">Tema en discusión:</span>
+            <div id="liveTopicText" style="font-size: 0.95rem; font-weight: 600; color: var(--accent-cyan); margin-top: 0.2rem;">Inicio de la reunión</div>
+          </div>
+
+          <!-- Puntos Clave en Vivo -->
+          <div class="companion-section">
+            <div class="companion-section-header">
+              <span>📌 Conclusiones y Puntos Clave</span>
+              <button id="refreshLiveNotesBtn" class="btn-tiny-refresh" title="Forzar actualización de notas">🔄</button>
+            </div>
+            <ul id="liveTakeawaysList" class="live-takeaways-list">
+              <li class="empty-hint">El asistente está escuchando activamente para anotar los puntos importantes...</li>
+            </ul>
+          </div>
+
+          <!-- Compromisos y Tareas en Vivo -->
+          <div class="companion-section">
+            <div class="companion-section-header">
+              <span>✅ Compromisos Detectados (Next Steps)</span>
+            </div>
+            <ul id="liveActionItemsList" class="live-action-list">
+              <li class="empty-hint">Aún no se han detectado compromisos o tareas explícitas.</li>
+            </ul>
+          </div>
+
+          <!-- Popover / Recuadro de Catch Me Up -->
+          <div id="catchUpBox" class="catchup-box" style="display: none;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.4rem;">
+              <strong style="color: var(--accent-cyan); font-size: 0.85rem;">⚡ Resumen Rápido (Catch Me Up):</strong>
+              <button id="closeCatchUpBtn" style="background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: 1rem;">&times;</button>
+            </div>
+            <div id="catchUpText" style="font-size: 0.85rem; line-height: 1.5; color: var(--text-main);"></div>
+          </div>
         </div>
       </div>
     </div>
-
-    <div class="controls-bar">
-      <button id="recordBtn" class="btn-record">
-        <span id="recordIcon">🎙️</span>
-        <span id="recordText">Presionar para Hablar (ES)</span>
-      </button>
-    </div>
   </main>
+
 
   <!-- Modal de Búsqueda Histórica FTS5 -->
   <div id="searchModal" class="modal-backdrop" style="display: none;">
