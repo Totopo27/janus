@@ -153,8 +153,15 @@ function connectLocalMicStream() {
     try {
       const data = JSON.parse(event.data);
       console.log("[LocalMicSocket] Resultado recibido del servidor:", data);
-      if (data.type === "turn_result" && data.audio_base64 && audioPlaybackToggle.checked) {
-        playSynthesizedAudio(data.audio_base64, data.format || "wav");
+      if (data.type === "turn_result") {
+        renderTurnCard({
+          speaker_id: "carlos",
+          original_text: data.original_text,
+          translated_text: data.translated_text
+        });
+        if (data.audio_base64 && audioPlaybackToggle.checked) {
+          playSynthesizedAudio(data.audio_base64, data.format || "wav");
+        }
       }
     } catch (e) {
       console.error("[LocalMicSocket] Error parseando respuesta de audio:", e);
@@ -185,8 +192,15 @@ function connectMeetAudioStream() {
     try {
       const data = JSON.parse(event.data);
       console.log("[MeetAudioSocket] Resultado recibido del servidor:", data);
-      if (data.type === "turn_result" && data.audio_base64 && audioPlaybackToggle.checked) {
-        playSynthesizedAudio(data.audio_base64, data.format || "wav");
+      if (data.type === "turn_result") {
+        renderTurnCard({
+          speaker_id: "alice",
+          original_text: data.original_text,
+          translated_text: data.translated_text
+        });
+        if (data.audio_base64 && audioPlaybackToggle.checked) {
+          playSynthesizedAudio(data.audio_base64, data.format || "wav");
+        }
       }
     } catch (e) {
       console.error("[MeetAudioSocket] Error parseando respuesta de audio remoto:", e);

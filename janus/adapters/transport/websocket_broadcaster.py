@@ -36,11 +36,20 @@ class WebSocketBroadcaster(IEventBroadcaster):
 
     async def broadcast_event(self, session_id: str, event: DomainEvent) -> None:
         """Serializes and sends a domain event to all subscribers of session_id."""
+        data_dict = {}
+        for k, v in event.__dict__.items():
+            if k == "occurred_at":
+                continue
+            if hasattr(v, "isoformat"):
+                data_dict[k] = v.isoformat()
+            else:
+                data_dict[k] = v
+
         payload = {
             "type": "event",
             "event_name": event.event_name,
-            "data": {k: v for k, v in event.__dict__.items() if k != "occurred_at"},
-            "timestamp": event.occurred_at.isoformat(),
+            "data": data_dict,
+            "timestamp": event.occurred_at.isoformat() if hasattr(event.occurred_at, "isoformat") else str(event.occurred_at),
         }
         await self.broadcast_raw(session_id, payload)
 
