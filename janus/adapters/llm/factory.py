@@ -1,9 +1,12 @@
 import os
 from typing import Dict, Any, Optional
+from dotenv import load_dotenv
 from janus.ports.llm_port import ILLMProvider
 from janus.adapters.llm.mock_llm_adapter import MockLLMAdapter
 from janus.adapters.llm.ollama_adapter import OllamaAdapter
 from janus.adapters.llm.gemini_adapter import GeminiAdapter
+
+load_dotenv()
 
 
 class LLMProviderFactory:
@@ -13,9 +16,9 @@ class LLMProviderFactory:
     """
 
     @staticmethod
-    def create(provider: str = "ollama", config: Optional[Dict[str, Any]] = None) -> ILLMProvider:
+    def create(provider: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> ILLMProvider:
         cfg = config or {}
-        prov = provider.lower()
+        prov = (provider or os.getenv("LLM_PROVIDER", "ollama")).lower()
 
         if prov == "mock":
             return MockLLMAdapter(
@@ -24,10 +27,11 @@ class LLMProviderFactory:
 
         if prov == "gemini":
             api_key = cfg.get("api_key") or os.getenv("GEMINI_API_KEY", "")
-            model = cfg.get("model") or os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            model = cfg.get("model") or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
             return GeminiAdapter(api_key=api_key, model=model)
 
         # Default to local Ollama
         base_url = cfg.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         model = cfg.get("model") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
         return OllamaAdapter(base_url=base_url, model=model)
+

@@ -18,12 +18,13 @@ class GeminiAdapter(ILLMProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-2.5-flash",
+        model: str = "gemini-3.6-flash",
         timeout_seconds: float = 60.0,
     ) -> None:
         self.api_key = api_key
-        self.model = model
+        self.model = model.replace("models/", "")
         self.timeout_seconds = timeout_seconds
+
 
     @property
     def provider_name(self) -> str:
