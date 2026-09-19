@@ -246,3 +246,53 @@ def test_api_meeting_chat_and_system_llm_config(tmp_path):
     assert "answer" in chat_data
     assert chat_data["provider"] == "mock"
 
+
+def test_websocket_audio_stream_logging_and_turn_dispatch(tmp_path):
+    import base64
+    import json
+
+    session_service = SessionService()
+    broadcaster = WebSocketBroadcaster()
+    db_path = str(tmp_path / "ws_audio_test.db")
+    meeting_repo = SqliteMeetingRepository(db_path=db_path)
+
+    orchestrator = PipelineOrchestrator(
+        stt_engine=MockSpeechRecognizer(predefined_text="Hola probando entrada de micrófono", language="es"),
+        translation_engine=MockTranslator({"Hola probando entrada de micrófono": "Hello testing microphone input"}),
+        tts_engine=MockSpeechSynthesizer(),
+        broadcaster=broadcaster,
+        storage_repo=meeting_repo,
+    )
+
+    app = create_app(
+        session_service=session_service,
+        orchestrator=orchestrator,
+        broadcaster=broadcaster,
+        meeting_repo=meeting_repo,
+    )
+
+    client = TestClient(app)
+
+    # 1. Create session
+    sess_payload = {
+        "session_id": "ws_audio_sess",
+        "speaker_a": {"speaker_id": "spk_1", "name": "Carlos", "native_language": "es"},
+        "speaker_b": {"speaker_id": "spk_2", "name": "Alice", "native_language": "en"},
+    }
+    client.post("/api/sessions", json=sess_payload)
+
+    # 2. Connect to websocket audio stream and send audio packet
+    fake_audio_bytes = b"RIFF" + b"\x00" * 300
+    b64_audio = base64.b64encode(fake_audio_bytes).decode("utf-8")
+
+    with client.websocket_connect("/ws/audio-stream/ws_audio_sess/spk_1") as websocket:
+        websocket.send_text(json.dumps({"audio_base64": b64_audio}))
+        response_text = websocket.receive_text()
+        data = json.loads(response_text)
+
+        assert data["type"] == "turn_result"
+        assert data["original_text"] == "Hola probando entrada de micrófono"
+        assert data["translated_text"] == "Hello testing microphone input"
+        assert "audio_base64" in data
+
+

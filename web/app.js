@@ -98,25 +98,33 @@ function connectTeleprompter() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws/live-notes/${SESSION_ID}`;
 
+  console.log(`[TeleprompterSocket] Conectando a ${wsUrl}...`);
   teleprompterSocket = new WebSocket(wsUrl);
 
   teleprompterSocket.onopen = () => {
+    console.log("[TeleprompterSocket] Conexión establecida (En Vivo)");
     statusDot.classList.add("connected");
     statusText.textContent = "En Vivo (Conectado)";
   };
 
-  teleprompterSocket.onclose = () => {
+  teleprompterSocket.onclose = (evt) => {
+    console.warn(`[TeleprompterSocket] Conexión cerrada (código: ${evt.code}). Reintentando en 2s...`);
     statusDot.classList.remove("connected");
     statusText.textContent = "Desconectado (Reintentando...)";
     setTimeout(connectTeleprompter, 2000);
   };
 
+  teleprompterSocket.onerror = (err) => {
+    console.error("[TeleprompterSocket] Error en la conexión WebSocket:", err);
+  };
+
   teleprompterSocket.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      console.log("[TeleprompterSocket] Evento recibido:", data.event_name || data.type || data);
       handleIncomingEvent(data);
     } catch (e) {
-      console.error("Failed to parse websocket message:", e);
+      console.error("[TeleprompterSocket] Error parseando mensaje JSON:", e);
     }
   };
 }
@@ -126,16 +134,30 @@ function connectLocalMicStream() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws/audio-stream/${SESSION_ID}/carlos`;
 
+  console.log(`[LocalMicSocket] Conectando a ${wsUrl}...`);
   localMicSocket = new WebSocket(wsUrl);
+
+  localMicSocket.onopen = () => {
+    console.log("[LocalMicSocket] Canal de audio local conectado exitosamente (carlos)");
+  };
+
+  localMicSocket.onerror = (err) => {
+    console.error("[LocalMicSocket] Error en el socket de audio local:", err);
+  };
+
+  localMicSocket.onclose = (evt) => {
+    console.warn(`[LocalMicSocket] Canal de audio local cerrado (código: ${evt.code})`);
+  };
 
   localMicSocket.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      console.log("[LocalMicSocket] Resultado recibido del servidor:", data);
       if (data.type === "turn_result" && data.audio_base64 && audioPlaybackToggle.checked) {
         playSynthesizedAudio(data.audio_base64, data.format || "wav");
       }
     } catch (e) {
-      console.error("Local audio socket parse error:", e);
+      console.error("[LocalMicSocket] Error parseando respuesta de audio:", e);
     }
   };
 }
@@ -144,16 +166,30 @@ function connectMeetAudioStream() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws/audio-stream/${SESSION_ID}/alice`;
 
+  console.log(`[MeetAudioSocket] Conectando a ${wsUrl}...`);
   meetAudioSocket = new WebSocket(wsUrl);
+
+  meetAudioSocket.onopen = () => {
+    console.log("[MeetAudioSocket] Canal de audio remoto conectado exitosamente (alice)");
+  };
+
+  meetAudioSocket.onerror = (err) => {
+    console.error("[MeetAudioSocket] Error en el socket de audio remoto:", err);
+  };
+
+  meetAudioSocket.onclose = (evt) => {
+    console.warn(`[MeetAudioSocket] Canal de audio remoto cerrado (código: ${evt.code})`);
+  };
 
   meetAudioSocket.onmessage = (event) => {
     try {
       const data = JSON.parse(event.data);
+      console.log("[MeetAudioSocket] Resultado recibido del servidor:", data);
       if (data.type === "turn_result" && data.audio_base64 && audioPlaybackToggle.checked) {
         playSynthesizedAudio(data.audio_base64, data.format || "wav");
       }
     } catch (e) {
-      console.error("Meet audio socket parse error:", e);
+      console.error("[MeetAudioSocket] Error parseando respuesta de audio remoto:", e);
     }
   };
 }
@@ -219,9 +255,15 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// 5. Microphone Recording (Push-to-talk for Carlos / Speaker A)
+// 5. Microphone Recording (Toggle On/Off for Carlos / Speaker A)
 async function startLocalRecording() {
   try {
+    if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
+      console.warn("[AudioRecorder] Socket de audio local no está conectado. Reintentando conexión...");
+      connectLocalMicStream();
+    }
+
+    console.log("[AudioRecorder] Solicitando acceso al micrófono...");
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     localAudioChunks = [];
     localMicRecorder = new MediaRecorder(stream);
@@ -229,44 +271,68 @@ async function startLocalRecording() {
     localMicRecorder.ondataavailable = (e) => {
       if (e.data.size > 0) {
         localAudioChunks.push(e.data);
+        console.log(`[AudioRecorder] Bloque de audio grabado: ${e.data.size} bytes`);
       }
     };
 
     localMicRecorder.onstop = async () => {
       const audioBlob = new Blob(localAudioChunks, { type: "audio/webm" });
+      console.log(`[AudioRecorder] Grabación detenida. Total bloques: ${localAudioChunks.length}, tamaño blob: ${audioBlob.size} bytes`);
+
+      if (audioBlob.size === 0) {
+        console.warn("[AudioRecorder] El blob de audio resultó vacío (0 bytes). Se omite el envío.");
+        stream.getTracks().forEach(track => track.stop());
+        return;
+      }
+
       const arrayBuffer = await audioBlob.arrayBuffer();
       const base64Audio = btoa(
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
 
+      console.log(`[AudioRecorder] Enviando audio base64 (${base64Audio.length} caracteres) al servidor...`);
+
       if (localMicSocket && localMicSocket.readyState === WebSocket.OPEN) {
         localMicSocket.send(JSON.stringify({ audio_base64: base64Audio }));
+        console.log("[AudioRecorder] Audio enviado exitosamente por WebSocket");
+      } else {
+        console.error("[AudioRecorder] No se pudo enviar el audio: WebSocket cerrado o no listo", localMicSocket ? localMicSocket.readyState : "null");
       }
+
       stream.getTracks().forEach(track => track.stop());
     };
 
     localMicRecorder.start();
     isLocalRecording = true;
     recordBtn.classList.add("recording");
-    recordText.textContent = "Escuchando... Soltá para Enviar";
+    recordText.textContent = "Detener Grabación (ES)";
+    console.log("[AudioRecorder] Grabación iniciada en modo Toggle (Escuchando...)");
   } catch (err) {
+    console.error("[AudioRecorder] Error accediendo al micrófono:", err);
     alert("No se pudo acceder al micrófono: " + err.message);
   }
 }
 
 function stopLocalRecording() {
   if (localMicRecorder && isLocalRecording) {
+    console.log("[AudioRecorder] Deteniendo grabación...");
     localMicRecorder.stop();
     isLocalRecording = false;
     recordBtn.classList.remove("recording");
-    recordText.textContent = "Presionar para Hablar (ES)";
+    recordText.textContent = "Iniciar Grabación (ES)";
   }
 }
 
-recordBtn.addEventListener("mousedown", startLocalRecording);
-recordBtn.addEventListener("mouseup", stopLocalRecording);
-recordBtn.addEventListener("touchstart", (e) => { e.preventDefault(); startLocalRecording(); });
-recordBtn.addEventListener("touchend", (e) => { e.preventDefault(); stopLocalRecording(); });
+// Toggle recording on button click
+if (recordBtn) {
+  recordBtn.addEventListener("click", () => {
+    if (isLocalRecording) {
+      stopLocalRecording();
+    } else {
+      startLocalRecording();
+    }
+  });
+}
 
 clearFeedBtn.addEventListener("click", () => {
   feed.innerHTML = `<div style="text-align: center; color: var(--text-muted); margin-top: 3rem;">

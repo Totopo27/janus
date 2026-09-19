@@ -59,9 +59,11 @@ def create_websocket_router(
         Can receive binary PCM/WAV chunks or JSON packets.
         """
         await websocket.accept()
+        logger.info(f"Audio stream client '{speaker_id}' connected to session '{session_id}'")
         session = session_service.get_session(session_id)
 
         if not session:
+            logger.warning(f"Audio stream rejected: Session '{session_id}' not found for speaker '{speaker_id}'")
             await websocket.send_text(json.dumps({"error": "Session not found"}))
             await websocket.close()
             return
@@ -73,17 +75,23 @@ def create_websocket_router(
 
                 if "bytes" in message and message["bytes"]:
                     audio_bytes = message["bytes"]
+                    logger.info(f"[{session_id}:{speaker_id}] Received raw binary audio chunk ({len(audio_bytes)} bytes)")
                 elif "text" in message and message["text"]:
                     try:
                         parsed = json.loads(message["text"])
                         if "audio_base64" in parsed:
                             audio_bytes = base64.b64decode(parsed["audio_base64"])
-                    except Exception:
-                        pass
+                            logger.info(f"[{session_id}:{speaker_id}] Received base64 audio chunk ({len(audio_bytes)} bytes decoded)")
+                        else:
+                            logger.warning(f"[{session_id}:{speaker_id}] JSON message missing 'audio_base64' key: {list(parsed.keys())}")
+                    except Exception as pe:
+                        logger.warning(f"[{session_id}:{speaker_id}] Could not parse JSON text message: {pe}")
 
                 if not audio_bytes:
+                    logger.warning(f"[{session_id}:{speaker_id}] Empty audio bytes received, skipping processing turn.")
                     continue
 
+                logger.info(f"[{session_id}:{speaker_id}] Dispatching AudioChunk ({len(audio_bytes)} bytes) to S2ST Pipeline Orchestrator...")
                 chunk = AudioChunk(data=audio_bytes, sample_rate=16000)
                 turn = await orchestrator.process_turn(
                     session=session,
@@ -91,20 +99,24 @@ def create_websocket_router(
                     audio=chunk,
                 )
 
-                if turn and turn.synthesis and turn.synthesis.audio_bytes:
-                    # Send back the synthesized audio to the counterpart or caller
-                    b64_audio = base64.b64encode(turn.synthesis.audio_bytes).decode("utf-8")
-                    await websocket.send_text(json.dumps({
-                        "type": "turn_result",
-                        "turn_id": turn.turn_id,
-                        "original_text": turn.original_transcription.text,
-                        "translated_text": turn.translation.translated_text,
-                        "audio_base64": b64_audio,
-                        "format": turn.synthesis.format,
-                    }))
+                if turn:
+                    logger.info(f"[{session_id}:{speaker_id}] Turn '{turn.turn_id}' completed: STT='{turn.original_transcription.text}' -> MT='{turn.translation.translated_text}'")
+                    if turn.synthesis and turn.synthesis.audio_bytes:
+                        b64_audio = base64.b64encode(turn.synthesis.audio_bytes).decode("utf-8")
+                        await websocket.send_text(json.dumps({
+                            "type": "turn_result",
+                            "turn_id": turn.turn_id,
+                            "original_text": turn.original_transcription.text,
+                            "translated_text": turn.translation.translated_text,
+                            "audio_base64": b64_audio,
+                            "format": turn.synthesis.format,
+                        }))
+                        logger.info(f"[{session_id}:{speaker_id}] Dispatched turn_result to client with synthesized audio ({len(turn.synthesis.audio_bytes)} bytes)")
+                else:
+                    logger.warning(f"[{session_id}:{speaker_id}] Pipeline orchestrator returned no turn (empty transcription or VAD filter)")
         except WebSocketDisconnect:
             logger.info(f"Audio stream client '{speaker_id}' disconnected from session '{session_id}'")
         except Exception as e:
-            logger.error(f"Error in audio stream websocket: {e}")
+            logger.error(f"Error in audio stream websocket for '{speaker_id}': {e}", exc_info=True)
 
     return router
