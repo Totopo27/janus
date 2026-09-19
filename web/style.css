@@ -1045,6 +1045,13 @@ main {
   border-radius: 2px;
 }
 
+.search-topic-tag {
+  background: rgba(0, 242, 254, 0.1);
+  color: var(--accent-cyan);
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
 .search-hit-meta {
   display: flex;
   align-items: center;

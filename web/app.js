@@ -1,15 +1,84 @@
 // Janus Web Client & Teleprompter Controller v0.2.0 (BYOM & Dual-Scenario Audio)
 
 const SESSION_ID = "live_bilingual_room";
+const API_TOKEN_STORAGE_KEY = "janusApiToken";
+const ADMIN_TOKEN_STORAGE_KEY = "janusAdminApiToken";
+const MAX_BROWSER_AUDIO_BYTES = 5 * 1024 * 1024;
 let teleprompterSocket = null;
 let localMicSocket = null;
 let meetAudioSocket = null;
 
 let localMicRecorder = null;
+let localMicIntervalId = null;
+let localMicStream = null;
 let meetAudioRecorder = null;
+let meetAudioIntervalId = null;
 let localAudioChunks = [];
 let isLocalRecording = false;
 let meetStream = null;
+
+function getStoredToken(storageKey, promptMessage) {
+  let token = sessionStorage.getItem(storageKey);
+  if (!token) {
+    token = window.prompt(promptMessage)?.trim() || "";
+    if (token) sessionStorage.setItem(storageKey, token);
+  }
+  return token;
+}
+
+function getApiToken() {
+  return getStoredToken(API_TOKEN_STORAGE_KEY, "Ingresá el token de acceso de Janus:");
+}
+
+async function apiFetch(url, options = {}, requireAdmin = false) {
+  const token = requireAdmin
+    ? getStoredToken(ADMIN_TOKEN_STORAGE_KEY, "Ingresá el token de administrador de Janus:")
+    : getApiToken();
+  if (!token) throw new Error("Se requiere autenticación para usar Janus");
+
+  const headers = new Headers(options.headers || {});
+  headers.set("Authorization", `Bearer ${token}`);
+  const response = await fetch(url, { ...options, headers });
+  if (response.status === 401) sessionStorage.removeItem(API_TOKEN_STORAGE_KEY);
+  if (requireAdmin && response.status === 403) sessionStorage.removeItem(ADMIN_TOKEN_STORAGE_KEY);
+  return response;
+}
+
+function authenticateWebSocket(socket) {
+  const token = getApiToken();
+  if (!token) {
+    socket.close(1008, "Authentication required");
+    return false;
+  }
+  socket.send(JSON.stringify({ type: "auth", token }));
+  return true;
+}
+
+function arrayBufferToBase64(arrayBuffer) {
+  const bytes = new Uint8Array(arrayBuffer);
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(offset, offset + chunkSize));
+  }
+  return btoa(binary);
+}
+
+async function sendRecordedAudioBlob(audioBlob, socket, label) {
+  if (!audioBlob.size || audioBlob.size > MAX_BROWSER_AUDIO_BYTES) {
+    console.error(`[${label}] Audio segment is empty or exceeds the safe 5 MB limit`);
+    return;
+  }
+  const base64Audio = arrayBufferToBase64(await audioBlob.arrayBuffer());
+  if (socket && socket.readyState === WebSocket.OPEN) {
+    socket.send(JSON.stringify({
+      audio_base64: base64Audio,
+      audio_format: audioBlob.type || "audio/webm"
+    }));
+  } else {
+    console.error(`[${label}] Audio socket is not open`);
+  }
+}
 
 // DOM Elements
 const statusDot = document.getElementById("statusDot");
@@ -83,7 +152,7 @@ async function initSession() {
       }
     };
 
-    await fetch("/api/sessions", {
+    await apiFetch("/api/sessions", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload)
@@ -102,6 +171,7 @@ function connectTeleprompter() {
   teleprompterSocket = new WebSocket(wsUrl);
 
   teleprompterSocket.onopen = () => {
+    if (!authenticateWebSocket(teleprompterSocket)) return;
     console.log("[TeleprompterSocket] Conexión establecida (En Vivo)");
     statusDot.classList.add("connected");
     statusText.textContent = "En Vivo (Conectado)";
@@ -111,6 +181,7 @@ function connectTeleprompter() {
     console.warn(`[TeleprompterSocket] Conexión cerrada (código: ${evt.code}). Reintentando en 2s...`);
     statusDot.classList.remove("connected");
     statusText.textContent = "Desconectado (Reintentando...)";
+    if (evt.code === 1008) sessionStorage.removeItem(API_TOKEN_STORAGE_KEY);
     setTimeout(connectTeleprompter, 2000);
   };
 
@@ -138,6 +209,7 @@ function connectLocalMicStream() {
   localMicSocket = new WebSocket(wsUrl);
 
   localMicSocket.onopen = () => {
+    if (!authenticateWebSocket(localMicSocket)) return;
     console.log("[LocalMicSocket] Canal de audio local conectado exitosamente (carlos)");
   };
 
@@ -177,6 +249,7 @@ function connectMeetAudioStream() {
   meetAudioSocket = new WebSocket(wsUrl);
 
   meetAudioSocket.onopen = () => {
+    if (!authenticateWebSocket(meetAudioSocket)) return;
     console.log("[MeetAudioSocket] Canal de audio remoto conectado exitosamente (alice)");
   };
 
@@ -279,6 +352,7 @@ async function startLocalRecording() {
 
     console.log("[AudioRecorder] Solicitando acceso al micrófono...");
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    localMicStream = stream;
     localAudioChunks = [];
     localMicRecorder = new MediaRecorder(stream);
 
@@ -290,34 +364,23 @@ async function startLocalRecording() {
     };
 
     localMicRecorder.onstop = async () => {
-      const audioBlob = new Blob(localAudioChunks, { type: "audio/webm" });
-      console.log(`[AudioRecorder] Grabación detenida. Total bloques: ${localAudioChunks.length}, tamaño blob: ${audioBlob.size} bytes`);
-
-      if (audioBlob.size === 0) {
-        console.warn("[AudioRecorder] El blob de audio resultó vacío (0 bytes). Se omite el envío.");
-        stream.getTracks().forEach(track => track.stop());
-        return;
-      }
-
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const base64Audio = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-      );
-
-      console.log(`[AudioRecorder] Enviando audio base64 (${base64Audio.length} caracteres) al servidor...`);
-
-      if (localMicSocket && localMicSocket.readyState === WebSocket.OPEN) {
-        localMicSocket.send(JSON.stringify({ audio_base64: base64Audio }));
-        console.log("[AudioRecorder] Audio enviado exitosamente por WebSocket");
+      const mimeType = localMicRecorder.mimeType || "audio/webm";
+      const audioBlob = new Blob(localAudioChunks, { type: mimeType });
+      localAudioChunks = [];
+      await sendRecordedAudioBlob(audioBlob, localMicSocket, "AudioRecorder");
+      if (isLocalRecording && localMicStream?.active) {
+        localMicRecorder.start();
       } else {
-        console.error("[AudioRecorder] No se pudo enviar el audio: WebSocket cerrado o no listo", localMicSocket ? localMicSocket.readyState : "null");
+        stream.getTracks().forEach(track => track.stop());
+        localMicStream = null;
       }
-
-      stream.getTracks().forEach(track => track.stop());
     };
 
-    localMicRecorder.start();
     isLocalRecording = true;
+    localMicRecorder.start();
+    localMicIntervalId = setInterval(() => {
+      if (localMicRecorder?.state === "recording") localMicRecorder.stop();
+    }, 2500);
     recordBtn.classList.add("recording");
     recordText.textContent = "Detener Grabación (ES)";
     console.log("[AudioRecorder] Grabación iniciada en modo Toggle (Escuchando...)");
@@ -330,8 +393,12 @@ async function startLocalRecording() {
 function stopLocalRecording() {
   if (localMicRecorder && isLocalRecording) {
     console.log("[AudioRecorder] Deteniendo grabación...");
-    localMicRecorder.stop();
     isLocalRecording = false;
+    if (localMicRecorder.state === "recording") localMicRecorder.stop();
+    if (localMicIntervalId) {
+      clearInterval(localMicIntervalId);
+      localMicIntervalId = null;
+    }
     recordBtn.classList.remove("recording");
     recordText.textContent = "Iniciar Grabación (ES)";
   }
@@ -401,30 +468,28 @@ async function startMeetAudioCapture() {
     };
 
     // Slice audio every 2.5s for real-time translation loop
-    const intervalId = setInterval(async () => {
+    meetAudioIntervalId = setInterval(async () => {
       if (meetAudioRecorder && meetAudioRecorder.state === "recording") {
         meetAudioRecorder.stop();
-        meetAudioRecorder.start();
       }
     }, 2500);
 
     meetAudioRecorder.onstop = async () => {
       if (chunks.length > 0) {
-        const audioBlob = new Blob(chunks, { type: "audio/webm" });
+        const mimeType = meetAudioRecorder.mimeType || "audio/webm";
+        const audioBlob = new Blob(chunks, { type: mimeType });
         chunks = [];
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const base64Audio = btoa(
-          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-        );
-        if (meetAudioSocket && meetAudioSocket.readyState === WebSocket.OPEN) {
-          meetAudioSocket.send(JSON.stringify({ audio_base64: base64Audio }));
-        }
+        await sendRecordedAudioBlob(audioBlob, meetAudioSocket, "RemoteAudioRecorder");
+      }
+      if (meetStream?.active) {
+        meetAudioRecorder.start();
       }
     };
 
     meetStream.getVideoTracks().forEach(track => {
       track.onended = () => {
-        clearInterval(intervalId);
+        clearInterval(meetAudioIntervalId);
+        meetAudioIntervalId = null;
         stopMeetAudioCapture();
       };
     });
@@ -443,6 +508,10 @@ async function startMeetAudioCapture() {
 }
 
 function stopMeetAudioCapture() {
+  if (meetAudioIntervalId) {
+    clearInterval(meetAudioIntervalId);
+    meetAudioIntervalId = null;
+  }
   if (meetAudioRecorder && meetAudioRecorder.state !== "inactive") {
     meetAudioRecorder.stop();
   }
@@ -496,7 +565,7 @@ async function performSearch() {
     if (topic) {
       url += `&topic=${encodeURIComponent(topic)}`;
     }
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     if (!res.ok) throw new Error("Error en la búsqueda");
     const results = await res.json();
 
@@ -509,18 +578,32 @@ async function performSearch() {
     results.forEach(r => {
       const card = document.createElement("div");
       card.className = "search-hit-card";
-      const topicTag = r.topic_key ? `<span style="background: rgba(0, 242, 254, 0.1); color: var(--accent-cyan); padding: 2px 6px; border-radius: 4px;">${escapeHtml(r.topic_key)}</span>` : "";
       const dateStr = new Date(r.created_at * 1000).toLocaleString();
+      const snippet = document.createElement("div");
+      snippet.className = "search-hit-snippet";
+      snippet.textContent = r.snippet || "";
 
-      card.innerHTML = `
-        <div class="search-hit-snippet">${r.snippet}</div>
-        <div class="search-hit-meta">
-          <span>Reunión: <strong>${escapeHtml(r.meeting_id)}</strong></span>
-          <span>Hablante: ${escapeHtml(r.speaker_id)}</span>
-          <span>${dateStr}</span>
-          ${topicTag}
-        </div>
-      `;
+      const metadata = document.createElement("div");
+      metadata.className = "search-hit-meta";
+      const meeting = document.createElement("span");
+      meeting.append("Reunión: ");
+      const meetingId = document.createElement("strong");
+      meetingId.textContent = r.meeting_id || "";
+      meeting.appendChild(meetingId);
+
+      const speaker = document.createElement("span");
+      speaker.textContent = `Hablante: ${r.speaker_id || ""}`;
+      const date = document.createElement("span");
+      date.textContent = dateStr;
+      metadata.append(meeting, speaker, date);
+
+      if (r.topic_key) {
+        const topicTag = document.createElement("span");
+        topicTag.className = "search-topic-tag";
+        topicTag.textContent = r.topic_key;
+        metadata.appendChild(topicTag);
+      }
+      card.append(snippet, metadata);
       searchResultsList.appendChild(card);
     });
   } catch (err) {
@@ -544,7 +627,7 @@ if (finalizeBtn) {
     finalizeBtn.innerHTML = `<span>Generando Minuta...</span>`;
 
     try {
-      const res = await fetch(`/api/meetings/${SESSION_ID}/finalize`, { method: "POST" });
+      const res = await apiFetch(`/api/meetings/${SESSION_ID}/finalize`, { method: "POST" });
       if (!res.ok) {
         throw new Error("No se pudo finalizar la reunión");
       }
@@ -567,7 +650,7 @@ if (finalizeBtn) {
           li.style.display = "flex";
           li.style.alignItems = "center";
           li.style.gap = "0.6rem";
-          const due = item.due_hint ? ` (Límite: ${item.due_hint})` : "";
+          const due = item.due_hint ? ` (Límite: ${escapeHtml(item.due_hint)})` : "";
           li.innerHTML = `<input type="checkbox" ${item.completed ? "checked" : ""} /> <span><strong>${escapeHtml(item.assignee)}:</strong> ${escapeHtml(item.task)}${due}</span>`;
           modalActionItems.appendChild(li);
         });
@@ -593,15 +676,22 @@ if (closeModalBtn) {
 }
 
 if (downloadMdBtn) {
-  downloadMdBtn.addEventListener("click", () => {
-    window.location.href = `/api/meetings/${SESSION_ID}/notes?format=markdown`;
+  downloadMdBtn.addEventListener("click", async () => {
+    const res = await apiFetch(`/api/meetings/${SESSION_ID}/notes?format=markdown`);
+    if (!res.ok) throw new Error("No se pudo descargar la minuta");
+    const blobUrl = URL.createObjectURL(await res.blob());
+    const link = document.createElement("a");
+    link.href = blobUrl;
+    link.download = `${SESSION_ID}_notes.md`;
+    link.click();
+    URL.revokeObjectURL(blobUrl);
   });
 }
 
 if (copyNotesBtn) {
   copyNotesBtn.addEventListener("click", async () => {
     try {
-      const res = await fetch(`/api/meetings/${SESSION_ID}/notes?format=markdown`);
+      const res = await apiFetch(`/api/meetings/${SESSION_ID}/notes?format=markdown`);
       const md = await res.text();
       await navigator.clipboard.writeText(md);
       copyNotesBtn.innerHTML = `
@@ -625,11 +715,11 @@ if (modalAiProvider) {
   modalAiProvider.addEventListener("change", async () => {
     const provider = modalAiProvider.value;
     try {
-      await fetch("/api/system/llm-config", {
+      await apiFetch("/api/system/llm-config", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ provider })
-      });
+      }, true);
     } catch (e) {
       console.warn("Could not switch LLM provider:", e);
     }
@@ -646,7 +736,7 @@ async function askAiAboutMeeting() {
   modalAiAnswerText.textContent = "Consultando a la IA con el contexto de la reunión...";
 
   try {
-    const res = await fetch(`/api/meetings/${SESSION_ID}/chat`, {
+    const res = await apiFetch(`/api/meetings/${SESSION_ID}/chat`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ question })
@@ -714,7 +804,7 @@ function renderLiveNotes(data) {
 
 async function loadInitialLiveNotes() {
   try {
-    const res = await fetch(`/api/meetings/${SESSION_ID}/live-notes`);
+    const res = await apiFetch(`/api/meetings/${SESSION_ID}/live-notes`);
     if (res.ok) {
       const data = await res.json();
       renderLiveNotes(data);
@@ -732,7 +822,7 @@ if (catchUpBtn) {
     catchUpText.textContent = "El asistente Zoom AI Companion está revisando los últimos minutos de la conversación...";
 
     try {
-      const res = await fetch(`/api/meetings/${SESSION_ID}/catch-up`, {
+      const res = await apiFetch(`/api/meetings/${SESSION_ID}/catch-up`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ last_n_turns: 6 }),
@@ -762,7 +852,7 @@ if (refreshLiveNotesBtn) {
   refreshLiveNotesBtn.addEventListener("click", async () => {
     refreshLiveNotesBtn.style.transform = "rotate(180deg)";
     try {
-      const res = await fetch(`/api/meetings/${SESSION_ID}/live-notes/refresh`, { method: "POST" });
+      const res = await apiFetch(`/api/meetings/${SESSION_ID}/live-notes/refresh`, { method: "POST" });
       if (res.ok) {
         const data = await res.json();
         renderLiveNotes(data);
@@ -782,4 +872,3 @@ window.addEventListener("DOMContentLoaded", async () => {
   connectLocalMicStream();
   await loadInitialLiveNotes();
 });
-

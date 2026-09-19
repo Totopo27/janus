@@ -45,3 +45,22 @@ def test_session_service_crud():
     # 5. Close / Delete
     service.close_session("meeting_1")
     assert service.get_session("meeting_1") is None
+
+
+def test_duplicate_session_is_idempotent_and_never_discards_turns():
+    service = SessionService()
+    speaker_a = SpeakerProfile("a", "Alice", "en")
+    speaker_b = SpeakerProfile("b", "Bob", "es")
+    session = service.create_session("meeting", speaker_a, speaker_b)
+    session.add_turn(ConversationTurn(
+        turn_id="turn",
+        session_id="meeting",
+        speaker_id="a",
+        original_transcription=TranscriptionResult("hello", "en"),
+        translation=TranslationResult("hello", "en", "hola", "es"),
+    ))
+
+    assert service.create_session("meeting", speaker_a, speaker_b) is session
+    assert len(session.turns) == 1
+    with pytest.raises(ValueError, match="different participants"):
+        service.create_session("meeting", SpeakerProfile("x", "Mallory", "en"), speaker_b)

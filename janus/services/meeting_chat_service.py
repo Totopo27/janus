@@ -5,6 +5,9 @@ from janus.ports.storage_port import IMeetingRepository
 from janus.ports.llm_port import ILLMProvider
 
 logger = logging.getLogger(__name__)
+MAX_MEETING_CONTEXT_CHARS = 100_000
+MAX_QUESTION_CHARS = 4_000
+MAX_HISTORY_MESSAGES = 20
 
 
 class MeetingChatService:
@@ -53,7 +56,14 @@ class MeetingChatService:
                     f"| Traducción ({turn.translation.target_lang}): {turn.translation.translated_text}"
                 )
 
-        return "\n".join(lines)
+        context = "\n".join(lines)
+        if len(context) > MAX_MEETING_CONTEXT_CHARS:
+            context = (
+                context[:20_000]
+                + "\n\n[TRANSCRIPT TRUNCATED FOR SAFETY]\n\n"
+                + context[-80_000:]
+            )
+        return context
 
     def ask(
         self,
@@ -61,6 +71,12 @@ class MeetingChatService:
         question: str,
         history: Optional[List[ChatMessage]] = None,
     ) -> str:
+        question = question.strip()
+        if not question or len(question) > MAX_QUESTION_CHARS:
+            raise ValueError("Question must contain between 1 and 4000 characters")
+        if history and len(history) > MAX_HISTORY_MESSAGES:
+            raise ValueError("Chat history cannot contain more than 20 messages")
+
         meeting = self.repository.get_meeting(meeting_id)
         if not meeting:
             raise ValueError(f"Reunión '{meeting_id}' no encontrada en el repositorio.")

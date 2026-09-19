@@ -1,5 +1,5 @@
 import os
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -18,6 +18,7 @@ from janus.adapters.translation.marian_translator import MarianTranslator
 from janus.adapters.tts.supertonic_tts_adapter import SupertonicTtsAdapter
 from janus.ports.storage_port import IMeetingRepository
 from janus.ports.llm_port import ILLMProvider
+from janus.api.security import ApiAuthenticator, RequestSizeLimitMiddleware, SecuritySettings
 
 
 def create_app(
@@ -29,21 +30,32 @@ def create_app(
     chat_service: MeetingChatService = None,
     live_notetaker: LiveNotetakerService = None,
     llm_provider: ILLMProvider = None,
+    security_settings: SecuritySettings = None,
     db_path: str = "janus.db",
 ) -> FastAPI:
     """Factory creating and configuring the Janus FastAPI application."""
+    if security_settings is None:
+        security_settings = SecuritySettings.from_environment()
+    authenticator = ApiAuthenticator(security_settings)
+
     app = FastAPI(
         title="Janus S2ST Platform",
         description="Local-First On-Device Speech-to-Speech Translation & Live Teleprompter with Zoom-style Meeting Notes & BYOM",
         version="0.2.0",
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
+    app.state.security_settings = security_settings
+
+    app.add_middleware(RequestSizeLimitMiddleware)
 
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_origins=sorted(security_settings.trusted_origins),
+        allow_credentials=False,
+        allow_methods=["GET", "POST", "DELETE", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type"],
     )
 
     # Initialize default persistence & storage services
@@ -75,9 +87,13 @@ def create_app(
     if session_service is None:
         session_service = SessionService()
     if orchestrator is None:
-        stt = SherpaSttAdapter()
-        mt = MarianTranslator()
-        tts = SupertonicTtsAdapter()
+        stt = SherpaSttAdapter(
+            tokens=os.getenv("JANUS_STT_TOKENS"),
+            whisper_encoder=os.getenv("JANUS_STT_WHISPER_ENCODER"),
+            whisper_decoder=os.getenv("JANUS_STT_WHISPER_DECODER"),
+        )
+        mt = MarianTranslator(model_name_or_path=os.getenv("JANUS_TRANSLATION_MODEL"))
+        tts = SupertonicTtsAdapter(model_dir=os.getenv("JANUS_TTS_MODEL_DIR"))
         orchestrator = PipelineOrchestrator(
             stt_engine=stt,
             translation_engine=mt,
@@ -88,7 +104,7 @@ def create_app(
         )
 
     # Health check
-    @app.get("/health", tags=["System"])
+    @app.get("/health", tags=["System"], dependencies=[Depends(authenticator.require_user)])
     def health_check():
         return {"status": "ok", "app": "Janus", "version": "0.2.0"}
 
@@ -101,6 +117,7 @@ def create_app(
             chat_service=chat_service,
             live_notetaker=live_notetaker,
             llm_factory=llm_factory,
+            authenticator=authenticator,
         )
     )
 
@@ -109,6 +126,7 @@ def create_app(
             session_service=session_service,
             orchestrator=orchestrator,
             broadcaster=broadcaster,
+            authenticator=authenticator,
         )
     )
 

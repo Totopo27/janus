@@ -20,7 +20,7 @@ class SupertonicTtsAdapter(ISpeechSynthesizer):
         sample_rate: int = 44100,
         auto_download: bool = False,
     ) -> None:
-        self.model_dir = model_dir or os.path.join(os.getcwd(), "assets", "models", "supertonic")
+        self.model_dir = model_dir
         self.sample_rate = sample_rate
         self.auto_download = auto_download
         self._engine = None
@@ -31,13 +31,17 @@ class SupertonicTtsAdapter(ISpeechSynthesizer):
 
         try:
             import supertonic
+            if not self.model_dir or not os.path.isdir(self.model_dir):
+                raise RuntimeError("A valid local Supertonic model directory is required")
             logger.info("Initializing Supertonic TTS engine...")
-            # If supertonic package provides SDK or direct helper:
-            self._engine = supertonic
+            self._engine = supertonic.TTS(
+                model_dir=self.model_dir,
+                auto_download=self.auto_download,
+            )
             logger.info("Supertonic engine loaded successfully.")
-        except ImportError:
-            logger.warning("Supertonic package not installed or not in PATH. Operating in fallback mode.")
-            self._engine = "fallback"
+        except Exception as e:
+            logger.error("Supertonic initialization failed (%s)", type(e).__name__)
+            raise RuntimeError("Supertonic is not configured or could not be loaded") from None
 
     def synthesize(
         self,
@@ -59,21 +63,19 @@ class SupertonicTtsAdapter(ISpeechSynthesizer):
                 voice_id=voice_style or "default",
             )
 
-        # In production with installed weights:
         try:
-            # Using soundfile or supertonic native pipeline
             import soundfile as sf
-            import numpy as np
-
-            # If real model exists in self.model_dir, invoke inference; otherwise generate a clean audio tone/chime
-            duration = max(0.5, len(clean_text) * 0.06)
-            total_samples = int(self.sample_rate * duration)
-            # Create smooth audible sine tone modulated as speech representation for testing/fallback
-            t = np.linspace(0, duration, total_samples, endpoint=False)
-            audio_wave = 0.2 * np.sin(2 * np.pi * 440 * t)
+            voice_name = voice_style if voice_style and voice_style != "default" else "M1"
+            style = self._engine.get_voice_style(voice_name)
+            audio_wave, duration_value = self._engine.synthesize(
+                clean_text,
+                voice_style=style,
+                lang=language,
+            )
+            duration = float(duration_value[0])
 
             buffer = io.BytesIO()
-            sf.write(buffer, audio_wave, self.sample_rate, format="WAV", subtype="PCM_16")
+            sf.write(buffer, audio_wave.squeeze(), self.sample_rate, format="WAV", subtype="PCM_16")
             audio_bytes = buffer.getvalue()
 
             return SynthesisResult(
@@ -84,13 +86,5 @@ class SupertonicTtsAdapter(ISpeechSynthesizer):
                 voice_id=voice_style or "default",
             )
         except Exception as e:
-            logger.error(f"Supertonic synthesis failed: {e}")
-            # Fallback simple header
-            dummy_wav = b"RIFF\x24\x00\x00\x00WAVEfmt \x10\x00\x00\x00\x01\x00\x01\x00D\xac\x00\x00\x88X\x01\x00\x02\x00\x10\x00data\x00\x00\x00\x00"
-            return SynthesisResult(
-                audio_bytes=dummy_wav,
-                sample_rate=self.sample_rate,
-                duration_seconds=0.1,
-                format="wav",
-                voice_id=voice_style or "default",
-            )
+            logger.error("Supertonic synthesis failed (%s)", type(e).__name__)
+            raise RuntimeError("Speech synthesis failed") from None

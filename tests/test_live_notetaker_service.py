@@ -1,6 +1,7 @@
 import json
+import asyncio
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, AsyncMock
 from janus.domain.models import (
     Meeting,
     SpeakerProfile,
@@ -24,7 +25,7 @@ def repo(tmp_path):
 @pytest.fixture
 def broadcaster():
     b = MagicMock()
-    b.broadcast = MagicMock()
+    b.broadcast_event = AsyncMock()
     return b
 
 
@@ -67,9 +68,9 @@ def test_live_notetaker_triggers_on_batch_size(repo, broadcaster):
         translation=TranslationResult("Hablemos de la arquitectura del proyecto", "es", "Let's talk about the project architecture", "en"),
     )
     repo.save_turn("meet_live_1", turn1)
-    notes1 = service.process_turn("meet_live_1", turn1)
+    notes1 = asyncio.run(service.process_turn_async("meet_live_1", turn1))
     assert notes1 is None  # Not yet triggered (batch_size=2)
-    assert broadcaster.broadcast.call_count == 0
+    assert broadcaster.broadcast_event.await_count == 0
 
     # 2nd turn
     turn2 = ConversationTurn(
@@ -80,7 +81,7 @@ def test_live_notetaker_triggers_on_batch_size(repo, broadcaster):
         translation=TranslationResult("I will configure FTS5 and Carlos will work on BYOM", "en", "Configuraré FTS5 y Carlos trabajará en BYOM", "es"),
     )
     repo.save_turn("meet_live_1", turn2)
-    notes2 = service.process_turn("meet_live_1", turn2)
+    notes2 = asyncio.run(service.process_turn_async("meet_live_1", turn2))
 
     assert notes2 is not None
     assert notes2.current_topic == "Definición de Arquitectura S2ST"
@@ -90,8 +91,9 @@ def test_live_notetaker_triggers_on_batch_size(repo, broadcaster):
     assert notes2.action_items[0].assignee == "Carlos"
 
     # Broadcaster should have been called
-    assert broadcaster.broadcast.call_count >= 1
-    event = broadcaster.broadcast.call_args[0][0]
+    assert broadcaster.broadcast_event.await_count == 1
+    session_id, event = broadcaster.broadcast_event.await_args.args
+    assert session_id == "meet_live_1"
     assert event.event_name == "LiveNotesUpdated"
     assert event.current_topic == "Definición de Arquitectura S2ST"
 

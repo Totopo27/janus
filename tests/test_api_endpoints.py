@@ -10,6 +10,10 @@ from janus.adapters.tts.mock_tts_adapter import MockSpeechSynthesizer
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
 
 
+AUTH_HEADERS = {"Authorization": "Bearer test-user-api-key-0000000000000001"}
+ADMIN_HEADERS = {"Authorization": "Bearer test-admin-api-key-00000000000001"}
+
+
 def test_api_health_and_session_routes(tmp_path):
     session_service = SessionService()
     broadcaster = WebSocketBroadcaster()
@@ -32,7 +36,7 @@ def test_api_health_and_session_routes(tmp_path):
         meeting_repo=meeting_repo,
         notes_service=notes_service,
     )
-    client = TestClient(app)
+    client = TestClient(app, headers=AUTH_HEADERS)
 
     # 1. Health check
     res = client.get("/health")
@@ -108,7 +112,7 @@ def test_api_meeting_lifecycle_and_notes(tmp_path):
         meeting_repo=meeting_repo,
         notes_service=notes_service,
     )
-    client = TestClient(app)
+    client = TestClient(app, headers=AUTH_HEADERS)
 
     # 1. Create Meeting via POST /api/meetings
     meet_payload = {
@@ -169,7 +173,7 @@ def test_api_search_turns_and_topic_key(tmp_path):
         meeting_repo=meeting_repo,
         notes_service=notes_service,
     )
-    client = TestClient(app)
+    client = TestClient(app, headers=AUTH_HEADERS)
 
     # 1. Create meeting with topic_key
     meet_payload = {
@@ -216,7 +220,7 @@ def test_api_meeting_chat_and_system_llm_config(tmp_path):
         meeting_repo=meeting_repo,
         notes_service=notes_service,
     )
-    client = TestClient(app)
+    client = TestClient(app, headers=AUTH_HEADERS)
 
     # Create meeting
     meet_payload = {
@@ -228,7 +232,11 @@ def test_api_meeting_chat_and_system_llm_config(tmp_path):
     client.post("/api/meetings", json=meet_payload)
 
     # Configure mock LLM provider
-    res_cfg = client.post("/api/system/llm-config", json={"provider": "mock"})
+    res_cfg = client.post(
+        "/api/system/llm-config",
+        json={"provider": "mock"},
+        headers=ADMIN_HEADERS,
+    )
     assert res_cfg.status_code == 200
     assert res_cfg.json()["provider"] == "mock"
 
@@ -271,7 +279,7 @@ def test_websocket_audio_stream_logging_and_turn_dispatch(tmp_path):
         meeting_repo=meeting_repo,
     )
 
-    client = TestClient(app)
+    client = TestClient(app, headers=AUTH_HEADERS)
 
     # 1. Create session
     sess_payload = {
@@ -285,8 +293,15 @@ def test_websocket_audio_stream_logging_and_turn_dispatch(tmp_path):
     fake_audio_bytes = b"RIFF" + b"\x00" * 300
     b64_audio = base64.b64encode(fake_audio_bytes).decode("utf-8")
 
-    with client.websocket_connect("/ws/audio-stream/ws_audio_sess/spk_1") as websocket:
-        websocket.send_text(json.dumps({"audio_base64": b64_audio}))
+    with client.websocket_connect(
+        "/ws/audio-stream/ws_audio_sess/spk_1",
+        headers={"Origin": "http://testserver"},
+    ) as websocket:
+        websocket.send_json({"type": "auth", "token": "test-user-api-key-0000000000000001"})
+        websocket.send_text(json.dumps({
+            "audio_base64": b64_audio,
+            "audio_format": "audio/pcm;rate=16000",
+        }))
         response_text = websocket.receive_text()
         data = json.loads(response_text)
 
@@ -294,5 +309,4 @@ def test_websocket_audio_stream_logging_and_turn_dispatch(tmp_path):
         assert data["original_text"] == "Hola probando entrada de micrófono"
         assert data["translated_text"] == "Hello testing microphone input"
         assert "audio_base64" in data
-
 

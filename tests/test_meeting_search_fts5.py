@@ -148,3 +148,41 @@ def test_fts5_search_handles_special_characters_gracefully(repo):
 
     res3 = repo.search_turns('')
     assert res3 == []
+
+
+def test_fts_snippets_never_include_active_html(repo):
+    speaker_a = SpeakerProfile("a", "Alice", "en")
+    speaker_b = SpeakerProfile("b", "Bob", "es")
+    repo.save_meeting(Meeting("xss", "XSS", speaker_a, speaker_b))
+    malicious = '<img src=x onerror="globalThis.pwned=1"> agenda'
+    repo.save_turn("xss", ConversationTurn(
+        turn_id="xss-turn",
+        session_id="xss",
+        speaker_id="a",
+        original_transcription=TranscriptionResult(malicious, "en"),
+        translation=TranslationResult(malicious, "en", malicious, "es"),
+    ))
+
+    snippet = repo.search_turns("agenda")[0].snippet
+    assert "<b>" not in snippet
+    assert malicious in snippet
+
+
+def test_replacing_turn_updates_single_fts_row(repo):
+    speaker_a = SpeakerProfile("a", "Alice", "en")
+    speaker_b = SpeakerProfile("b", "Bob", "es")
+    repo.save_meeting(Meeting("replace", "Replace", speaker_a, speaker_b))
+
+    def make_turn(text):
+        return ConversationTurn(
+            turn_id="same-turn",
+            session_id="replace",
+            speaker_id="a",
+            original_transcription=TranscriptionResult(text, "en"),
+            translation=TranslationResult(text, "en", text, "es"),
+        )
+
+    repo.save_turn("replace", make_turn("old phrase"))
+    repo.save_turn("replace", make_turn("new phrase"))
+    assert repo.search_turns("old") == []
+    assert len(repo.search_turns("new")) == 1

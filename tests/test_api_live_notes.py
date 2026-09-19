@@ -10,6 +10,9 @@ from janus.adapters.llm.mock_llm_adapter import MockLLMAdapter
 from janus.domain.models import ConversationTurn, TranscriptionResult, TranslationResult
 
 
+AUTH_HEADERS = {"Authorization": "Bearer test-user-api-key-0000000000000001"}
+
+
 def test_api_live_notes_and_catch_up(tmp_path):
     session_service = SessionService()
     broadcaster = WebSocketBroadcaster()
@@ -38,7 +41,7 @@ def test_api_live_notes_and_catch_up(tmp_path):
         live_notetaker=live_notetaker,
         llm_provider=mock_llm,
     )
-    client = TestClient(app)
+    client = TestClient(app, headers=AUTH_HEADERS)
 
     # 1. Create meeting
     meet_payload = {

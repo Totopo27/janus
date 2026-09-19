@@ -1,4 +1,5 @@
 import asyncio
+import pytest
 from janus.domain.models import (
     AudioChunk,
     Session,
@@ -89,5 +90,31 @@ def test_pipeline_orchestrator_skips_empty_audio():
         assert turn is None
         assert len(session.turns) == 0
         assert stt.transcribe_called_count == 0
+
+    asyncio.run(run_test())
+
+
+def test_storage_failure_does_not_publish_turn_to_session():
+    class FailingStorage:
+        def save_turn(self, meeting_id, turn):
+            raise OSError("disk unavailable")
+
+    async def run_test():
+        speaker_a = SpeakerProfile("carlos", "Carlos", "es")
+        speaker_b = SpeakerProfile("alice", "Alice", "en")
+        session = Session("storage-failure", speaker_a, speaker_b)
+        orchestrator = PipelineOrchestrator(
+            stt_engine=MockSpeechRecognizer(),
+            translation_engine=MockTranslator(),
+            tts_engine=MockSpeechSynthesizer(),
+            storage_repo=FailingStorage(),
+        )
+        with pytest.raises(OSError, match="disk unavailable"):
+            await orchestrator.process_turn(
+                session=session,
+                speaker_id="carlos",
+                audio=AudioChunk(data=b"\x00\x00" * 100),
+            )
+        assert session.turns == []
 
     asyncio.run(run_test())

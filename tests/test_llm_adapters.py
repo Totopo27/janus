@@ -1,4 +1,5 @@
 import json
+import httpx
 from unittest.mock import patch, MagicMock
 import pytest
 from janus.domain.models import ChatMessage
@@ -95,7 +96,9 @@ def test_gemini_adapter_generate():
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
         assert "generativelanguage.googleapis.com" in args[0]
-        assert "key=test_api_key" in args[0]
+        assert "test_api_key" not in args[0]
+        assert kwargs["headers"]["x-goog-api-key"] == "test_api_key"
+        assert kwargs["follow_redirects"] is False
 
 
 def test_gemini_adapter_chat_with_meeting():
@@ -143,3 +146,30 @@ def test_llm_factory():
     # Create gemini
     gemini_prov = factory.create("gemini", {"api_key": "dummy_key", "model": "gemini-2.5-flash"})
     assert isinstance(gemini_prov, GeminiAdapter)
+
+
+def test_ollama_rejects_private_and_metadata_networks():
+    with pytest.raises(ValueError, match="Private|metadata"):
+        OllamaAdapter(base_url="https://169.254.169.254", model="qwen2.5:3b")
+    with pytest.raises(ValueError, match="HTTPS"):
+        OllamaAdapter(base_url="http://10.0.0.10:11434", model="qwen2.5:3b")
+
+
+def test_factory_ignores_request_level_base_url_override(monkeypatch):
+    monkeypatch.setenv("OLLAMA_BASE_URL", "http://localhost:11434")
+    provider = LLMProviderFactory.create(
+        "ollama",
+        {"base_url": "http://169.254.169.254", "model": "qwen2.5:3b"},
+    )
+    assert provider.base_url == "http://localhost:11434"
+
+
+def test_gemini_errors_do_not_expose_api_keys():
+    adapter = GeminiAdapter(api_key="top-secret-api-key", model="gemini-2.5-flash")
+    request = MagicMock()
+    response = MagicMock(status_code=500)
+    error = httpx.HTTPStatusError("secret URL", request=request, response=response)
+    with patch("httpx.post", side_effect=error):
+        with pytest.raises(RuntimeError) as raised:
+            adapter.generate("hello")
+    assert "top-secret-api-key" not in str(raised.value)

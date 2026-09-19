@@ -28,17 +28,14 @@ class MarianTranslator(ITranslator):
             return
 
         try:
-            # Check if transformers pipeline or onnx model is available
             from transformers import pipeline
-            if self.model_name_or_path:
-                logger.info(f"Loading local translation model from '{self.model_name_or_path}'...")
-                self._pipeline = pipeline("translation", model=self.model_name_or_path)
-            else:
-                logger.info("MarianTranslator running in lightweight local mode.")
-                self._pipeline = "lightweight"
+            if not self.model_name_or_path:
+                raise RuntimeError("A local translation model path is required")
+            logger.info("Loading configured local translation model...")
+            self._pipeline = pipeline("translation", model=self.model_name_or_path)
         except Exception as e:
-            logger.warning(f"Could not load transformers pipeline: {e}. Using resilient local translation engine.")
-            self._pipeline = "lightweight"
+            logger.error("Translation model initialization failed (%s)", type(e).__name__)
+            raise RuntimeError("Local translation model is not configured or could not be loaded") from None
 
     def translate(
         self,
@@ -59,63 +56,12 @@ class MarianTranslator(ITranslator):
                 latency_ms=0.0,
             )
 
-        # If neural pipeline is loaded
-        if self._pipeline != "lightweight" and self._pipeline is not None:
-            try:
-                res = self._pipeline(clean_text)
-                translated = res[0]["translation_text"]
-                elapsed = (time.perf_counter() - start) * 1000.0
-                return TranslationResult(
-                    source_text=clean_text,
-                    source_lang=source_lang,
-                    translated_text=translated,
-                    target_lang=target_lang,
-                    latency_ms=round(elapsed, 2),
-                )
-            except Exception as e:
-                logger.error(f"Neural translation inference failed: {e}")
-
-        # Resilient local translator dictionary for conversational phrases
-        es_to_en = {
-            "hola": "Hello",
-            "buenos días": "Good morning",
-            "buenas tardes": "Good afternoon",
-            "buenas noches": "Good evening",
-            "¿cómo estás?": "How are you?",
-            "¿cómo está?": "How are you?",
-            "mucho gusto": "Nice to meet you",
-            "gracias": "Thank you",
-            "muchas gracias": "Thank you very much",
-            "por favor": "Please",
-            "adiós": "Goodbye",
-            "hasta luego": "See you later",
-            "sí": "Yes",
-            "no": "No",
-        }
-
-        en_to_es = {
-            "hello": "Hola",
-            "good morning": "Buenos días",
-            "good afternoon": "Buenas tardes",
-            "good evening": "Buenas noches",
-            "how are you?": "¿Cómo estás?",
-            "nice to meet you": "Mucho gusto",
-            "thank you": "Gracias",
-            "thank you very much": "Muchas gracias",
-            "please": "Por favor",
-            "goodbye": "Adiós",
-            "see you later": "Hasta luego",
-            "yes": "Sí",
-            "no": "No",
-        }
-
-        normalized = clean_text.lower()
-        if source_lang.startswith("es") and target_lang.startswith("en"):
-            translated = es_to_en.get(normalized, f"[EN] {clean_text}")
-        elif source_lang.startswith("en") and target_lang.startswith("es"):
-            translated = en_to_es.get(normalized, f"[ES] {clean_text}")
-        else:
-            translated = f"[{target_lang.upper()}] {clean_text}"
+        try:
+            res = self._pipeline(clean_text)
+            translated = res[0]["translation_text"]
+        except Exception as e:
+            logger.error("Neural translation inference failed (%s)", type(e).__name__)
+            raise RuntimeError("Translation inference failed") from None
 
         elapsed = (time.perf_counter() - start) * 1000.0
         return TranslationResult(
