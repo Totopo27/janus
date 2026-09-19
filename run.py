@@ -10,6 +10,15 @@ if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
 
+import logging
+
+# Configure root logger for Janus application
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    datefmt="%H:%M:%S",
+)
+
 # Ensure UTF-8 console output on Windows
 if sys.platform == "win32":
     try:
@@ -70,6 +79,7 @@ if __name__ == "__main__":
         host=args.host,
         port=target_port,
         reload=True,
+        log_level="info",
         app_dir=PROJECT_ROOT,
     )
 
