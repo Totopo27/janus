@@ -34,24 +34,24 @@ def download_models(target_dir: str = "assets/models"):
     except Exception as e:
         logger.warning(f"Could not download Supertonic automatically: {e}")
 
-    # 2. Sherpa-ONNX Whisper Base / Tiny Multilingual
+    # 2. Sherpa-ONNX Whisper Small / Base Multilingual
     whisper_dir = os.path.join(target_dir, "whisper")
     os.makedirs(whisper_dir, exist_ok=True)
-    logger.info("Downloading Sherpa-ONNX Whisper models (Base INT8)...")
+    logger.info("Downloading Sherpa-ONNX Whisper models (Small INT8)...")
     try:
         from huggingface_hub import hf_hub_download
-        for fname in ["base-encoder.int8.onnx", "base-decoder.int8.onnx", "base-tokens.txt"]:
+        for fname in ["small-encoder.int8.onnx", "small-decoder.int8.onnx", "small-tokens.txt"]:
             target_path = os.path.join(whisper_dir, fname)
             if not os.path.exists(target_path):
                 logger.info(f"Downloading {fname}...")
                 hf_hub_download(
-                    repo_id="csukuangfj/sherpa-onnx-whisper-base",
+                    repo_id="csukuangfj/sherpa-onnx-whisper-small",
                     filename=fname,
                     local_dir=whisper_dir,
                 )
-        logger.info(f"Sherpa-ONNX Whisper Base models saved in: {whisper_dir}")
+        logger.info(f"Sherpa-ONNX Whisper Small models saved in: {whisper_dir}")
     except Exception as e:
-        logger.warning(f"Could not download Sherpa-ONNX Whisper models automatically: {e}")
+        logger.warning(f"Could not download Sherpa-ONNX Whisper Small models automatically: {e}")
 
     # 3. Sherpa-ONNX Speaker Diarization / Embedding Models (CAM++)
     diarization_dir = os.path.join(target_dir, "diarization")
