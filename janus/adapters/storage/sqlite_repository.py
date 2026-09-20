@@ -3,7 +3,7 @@ import logging
 import re
 import sqlite3
 import time
-from typing import List, Optional
+from typing import Dict, List, Optional
 from janus.domain.models import (
     Meeting,
     SpeakerProfile,
@@ -33,12 +33,13 @@ class SqliteMeetingRepository(IMeetingRepository):
     def _get_connection(self) -> sqlite3.Connection:
         conn = sqlite3.connect(self.db_path)
         conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL;")
         conn.execute("PRAGMA foreign_keys=ON;")
         return conn
 
     def _init_db(self) -> None:
         with self._get_connection() as conn:
+            # WAL mode only needs to be set once — it persists in the DB file header
+            conn.execute("PRAGMA journal_mode=WAL;")
             conn.executescript("""
                 CREATE TABLE IF NOT EXISTS meetings (
                     meeting_id TEXT PRIMARY KEY,
@@ -299,13 +300,92 @@ class SqliteMeetingRepository(IMeetingRepository):
             )
 
     def list_meetings(self) -> List[Meeting]:
+        """Returns all meetings ordered by creation date, without loading full turn history."""
         with self._get_connection() as conn:
-            rows = conn.execute("SELECT meeting_id FROM meetings ORDER BY created_at DESC").fetchall()
+            rows = conn.execute(
+                "SELECT * FROM meetings ORDER BY created_at DESC"
+            ).fetchall()
+
+            meeting_ids = [r["meeting_id"] for r in rows]
+            if not meeting_ids:
+                return []
+
+            # Batch fetch summaries in one query
+            placeholders = ",".join("?" * len(meeting_ids))
+            summary_rows = conn.execute(
+                f"SELECT * FROM summaries WHERE meeting_id IN ({placeholders})",
+                meeting_ids,
+            ).fetchall()
+            summaries_by_id = {s["meeting_id"]: s for s in summary_rows}
+
+            # Batch fetch action items in one query
+            action_rows = conn.execute(
+                f"SELECT * FROM action_items WHERE meeting_id IN ({placeholders})",
+                meeting_ids,
+            ).fetchall()
+            actions_by_meeting: Dict[str, list] = {}
+            for a in action_rows:
+                actions_by_meeting.setdefault(a["meeting_id"], []).append(a)
+
+            # Batch fetch turn counts (lightweight — no full turn data)
+            turn_count_rows = conn.execute(
+                f"SELECT meeting_id, COUNT(*) as cnt FROM turns WHERE meeting_id IN ({placeholders}) GROUP BY meeting_id",
+                meeting_ids,
+            ).fetchall()
+            turn_counts = {r["meeting_id"]: r["cnt"] for r in turn_count_rows}
+
             meetings = []
-            for r in rows:
-                m = self.get_meeting(r["meeting_id"])
-                if m:
-                    meetings.append(m)
+            for m_row in rows:
+                mid = m_row["meeting_id"]
+                speaker_a = SpeakerProfile(
+                    speaker_id=m_row["speaker_a_id"],
+                    name=m_row["speaker_a_name"],
+                    native_language=m_row["speaker_a_lang"],
+                    preferred_voice_style=m_row["speaker_a_voice"],
+                )
+                speaker_b = SpeakerProfile(
+                    speaker_id=m_row["speaker_b_id"],
+                    name=m_row["speaker_b_name"],
+                    native_language=m_row["speaker_b_lang"],
+                    preferred_voice_style=m_row["speaker_b_voice"],
+                )
+
+                summary = None
+                if mid in summaries_by_id:
+                    s_row = summaries_by_id[mid]
+                    action_items = [
+                        ActionItem(
+                            assignee=a["assignee"],
+                            task=a["task"],
+                            due_hint=a["due_hint"],
+                            completed=bool(a["completed"]),
+                        )
+                        for a in actions_by_meeting.get(mid, [])
+                    ]
+                    summary = MeetingSummary(
+                        executive_summary=s_row["executive_summary"],
+                        key_points=json.loads(s_row["key_points_json"]),
+                        action_items=action_items,
+                        generated_at=s_row["generated_at"],
+                    )
+
+                # Build a lightweight Meeting (turns list empty — use get_meeting for full turns)
+                meeting = Meeting(
+                    meeting_id=mid,
+                    title=m_row["title"],
+                    speaker_a=speaker_a,
+                    speaker_b=speaker_b,
+                    topic_key=m_row["topic_key"] if "topic_key" in m_row.keys() else None,
+                    turns=[],  # Not loaded in list view for performance
+                    summary=summary,
+                    status=m_row["status"],
+                    created_at=m_row["created_at"],
+                    ended_at=m_row["ended_at"],
+                )
+                # Attach turn count via a synthetic attribute for response building
+                object.__setattr__(meeting, "_turn_count_cache", turn_counts.get(mid, 0))
+                meetings.append(meeting)
+
             return meetings
 
     def delete_meeting(self, meeting_id: str) -> bool:

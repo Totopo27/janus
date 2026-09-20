@@ -105,17 +105,24 @@ def create_websocket_router(
 
                 if turn:
                     logger.info(f"[{session_id}:{speaker_id}] Turn '{turn.turn_id}' completed: STT='{turn.original_transcription.text}' -> MT='{turn.translation.translated_text}'")
+                    b64_audio = None
                     if turn.synthesis and turn.synthesis.audio_bytes:
                         b64_audio = base64.b64encode(turn.synthesis.audio_bytes).decode("utf-8")
-                        await websocket.send_text(json.dumps({
-                            "type": "turn_result",
-                            "turn_id": turn.turn_id,
-                            "original_text": turn.original_transcription.text,
-                            "translated_text": turn.translation.translated_text,
-                            "audio_base64": b64_audio,
-                            "format": turn.synthesis.format,
-                        }))
-                        logger.info(f"[{session_id}:{speaker_id}] Dispatched turn_result to client with synthesized audio ({len(turn.synthesis.audio_bytes)} bytes)")
+
+                    payload = {
+                        "type": "turn_result",
+                        "turn_id": turn.turn_id,
+                        "original_text": turn.original_transcription.text,
+                        "translated_text": turn.translation.translated_text,
+                    }
+                    if b64_audio:
+                        payload["audio_base64"] = b64_audio
+                        payload["format"] = turn.synthesis.format
+                        logger.info(f"[{session_id}:{speaker_id}] Dispatching turn_result with synthesized audio ({len(turn.synthesis.audio_bytes)} bytes)")
+                    else:
+                        logger.info(f"[{session_id}:{speaker_id}] Dispatching turn_result (text only, no audio in fallback mode)")
+
+                    await websocket.send_text(json.dumps(payload))
                 else:
                     logger.warning(f"[{session_id}:{speaker_id}] Pipeline orchestrator returned no turn (empty transcription or VAD filter)")
         except WebSocketDisconnect:

@@ -1,4 +1,5 @@
 import os
+from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -21,14 +22,14 @@ from janus.ports.llm_port import ILLMProvider
 
 
 def create_app(
-    session_service: SessionService = None,
-    orchestrator: PipelineOrchestrator = None,
-    broadcaster: WebSocketBroadcaster = None,
-    meeting_repo: IMeetingRepository = None,
-    notes_service: MeetingNotesService = None,
-    chat_service: MeetingChatService = None,
-    live_notetaker: LiveNotetakerService = None,
-    llm_provider: ILLMProvider = None,
+    session_service: Optional[SessionService] = None,
+    orchestrator: Optional[PipelineOrchestrator] = None,
+    broadcaster: Optional[WebSocketBroadcaster] = None,
+    meeting_repo: Optional[IMeetingRepository] = None,
+    notes_service: Optional[MeetingNotesService] = None,
+    chat_service: Optional[MeetingChatService] = None,
+    live_notetaker: Optional[LiveNotetakerService] = None,
+    llm_provider: Optional[ILLMProvider] = None,
     db_path: str = "janus.db",
 ) -> FastAPI:
     """Factory creating and configuring the Janus FastAPI application."""
@@ -38,10 +39,20 @@ def create_app(
         version="0.2.0",
     )
 
+    # Local-only CORS: allow localhost on any port (dev) and file:// origins.
+    # allow_origins=["*"] combined with allow_credentials=True is invalid per the
+    # CORS spec and rejected by browsers — restrict to known local origins instead.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=["*"],
-        allow_credentials=True,
+        allow_origins=[
+            "http://localhost",
+            "http://127.0.0.1",
+            "http://localhost:8000",
+            "http://127.0.0.1:8000",
+            "http://localhost:8080",
+            "http://127.0.0.1:8080",
+        ],
+        allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )

@@ -150,7 +150,7 @@ def test_api_meeting_lifecycle_and_notes(tmp_path):
     assert "executive_summary" in notes
 
     # 5. Get notes in Markdown format
-    res = client.get("/api/meetings/board_sync_2026/notes?format=markdown")
+    res = client.get("/api/meetings/board_sync_2026/notes?notes_format=markdown")
     assert res.status_code == 200
     assert "text/markdown" in res.headers["content-type"]
     assert "# Minuta de Reunión: Reunión de Directorio Janus" in res.text

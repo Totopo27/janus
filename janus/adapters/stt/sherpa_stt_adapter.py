@@ -33,9 +33,10 @@ class SherpaSttAdapter(ISpeechRecognizer):
         self.model_type = model_type
         self.num_threads = num_threads
         self._recognizer = None
+        self._is_fallback = False
 
     def _init_recognizer(self) -> None:
-        if self._recognizer is not None:
+        if self._recognizer is not None or self._is_fallback:
             return
 
         try:
@@ -69,10 +70,10 @@ class SherpaSttAdapter(ISpeechRecognizer):
                 logger.info("Sherpa-ONNX Transducer recognizer initialized successfully.")
             else:
                 logger.warning("No valid Sherpa-ONNX model files found on disk. Operating in resilient fallback mode.")
-                self._recognizer = "fallback"
+                self._is_fallback = True
         except Exception as e:
             logger.warning(f"Could not load Sherpa-ONNX native recognizer: {e}. Fallback active.")
-            self._recognizer = "fallback"
+            self._is_fallback = True
 
     def transcribe(
         self,
@@ -85,7 +86,7 @@ class SherpaSttAdapter(ISpeechRecognizer):
             return TranscriptionResult(text="", language=language or "es")
 
         # If native recognizer is loaded
-        if self._recognizer != "fallback" and self._recognizer is not None:
+        if self._recognizer is not None and not self._is_fallback:
             try:
                 import numpy as np
                 samples = np.frombuffer(audio.data, dtype=np.int16).astype(np.float32) / 32768.0

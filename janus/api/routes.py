@@ -1,4 +1,4 @@
-from typing import List, Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Literal
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from janus.domain.models import SpeakerProfile, Meeting, ChatMessage, SearchResult
@@ -275,11 +275,13 @@ def create_api_router(
         meeting_repo.save_meeting(meeting)
 
         # Also register in session service so audio can be streamed immediately
-        session_service.create_session(
-            session_id=request.meeting_id,
-            speaker_a=spk_a,
-            speaker_b=spk_b,
-        )
+        # Only create if no active session exists — avoid losing accumulated in-memory turns
+        if not session_service.get_session(request.meeting_id):
+            session_service.create_session(
+                session_id=request.meeting_id,
+                speaker_a=spk_a,
+                speaker_b=spk_b,
+            )
 
         return _build_meeting_response(meeting)
 
@@ -336,7 +338,7 @@ def create_api_router(
         return _build_meeting_response(updated)
 
     @router.get("/meetings/{meeting_id}/notes")
-    def get_meeting_notes(meeting_id: str, format: str = "json"):
+    def get_meeting_notes(meeting_id: str, notes_format: Literal["json", "markdown", "md"] = "json"):
         """
         Retrieves the meeting notes in JSON or raw GitHub Flavored Markdown format.
         """
@@ -347,7 +349,7 @@ def create_api_router(
         if not m:
             raise HTTPException(status_code=404, detail="Meeting not found")
 
-        if format.lower() == "markdown" or format.lower() == "md":
+        if notes_format in ("markdown", "md"):
             markdown = notes_service.export_as_markdown(meeting_id)
             return Response(
                 content=markdown,
@@ -527,7 +529,7 @@ def _build_meeting_response(m: Meeting) -> MeetingResponse:
             preferred_voice_style=m.speaker_b.preferred_voice_style,
         ),
         status=m.status,
-        turn_count=len(m.turns),
+        turn_count=getattr(m, "_turn_count_cache", len(m.turns)),
         created_at=m.created_at,
         ended_at=m.ended_at,
         summary=summary_schema,

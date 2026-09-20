@@ -89,9 +89,9 @@ def test_live_notetaker_triggers_on_batch_size(repo, broadcaster):
     assert len(notes2.action_items) == 1
     assert notes2.action_items[0].assignee == "Carlos"
 
-    # Broadcaster should have been called
-    assert broadcaster.broadcast.call_count >= 1
-    event = broadcaster.broadcast.call_args[0][0]
+    # Broadcaster should have been called with broadcast_event
+    assert broadcaster.broadcast_event.call_count >= 1
+    event = broadcaster.broadcast_event.call_args[0][1]
     assert event.event_name == "LiveNotesUpdated"
     assert event.current_topic == "Definición de Arquitectura S2ST"
 

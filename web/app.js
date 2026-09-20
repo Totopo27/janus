@@ -341,7 +341,10 @@ async function startLocalRecording() {
 
       const targetSocket = currentSpeakerId === "alice" ? meetAudioSocket : localMicSocket;
       if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
-        targetSocket.send(JSON.stringify({ audio_base64: base64Audio }));
+        targetSocket.send(JSON.stringify({
+          audio_base64: base64Audio,
+          mime_type: localMicRecorder.mimeType || "audio/webm",
+        }));
         console.log(`[AudioRecorder] Audio de ${currentSpeakerId} enviado exitosamente por WebSocket`);
       } else {
         console.error(`[AudioRecorder] No se pudo enviar el audio de ${currentSpeakerId}: WebSocket cerrado o no listo`);
