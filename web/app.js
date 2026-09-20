@@ -70,15 +70,15 @@ async function initSession() {
     const payload = {
       session_id: SESSION_ID,
       speaker_a: {
-        speaker_id: "carlos",
-        name: "Carlos",
-        native_language: "es",
+        speaker_id: "local",
+        name: "Hablante Local",
+        native_language: "auto",
         preferred_voice_style: "default"
       },
       speaker_b: {
-        speaker_id: "alice",
-        name: "Alice",
-        native_language: "en",
+        speaker_id: "remote",
+        name: "Hablante Remoto",
+        native_language: "auto",
         preferred_voice_style: "default"
       }
     };
@@ -132,13 +132,13 @@ function connectTeleprompter() {
 // 3. Connect to Audio Stream WebSockets
 function connectLocalMicStream() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${window.location.host}/ws/audio-stream/${SESSION_ID}/carlos`;
+  const wsUrl = `${protocol}//${window.location.host}/ws/audio-stream/${SESSION_ID}/local`;
 
   console.log(`[LocalMicSocket] Conectando a ${wsUrl}...`);
   localMicSocket = new WebSocket(wsUrl);
 
   localMicSocket.onopen = () => {
-    console.log("[LocalMicSocket] Canal de audio local conectado exitosamente (carlos)");
+    console.log("[LocalMicSocket] Canal de audio local conectado exitosamente");
   };
 
   localMicSocket.onerror = (err) => {
@@ -153,15 +153,9 @@ function connectLocalMicStream() {
     try {
       const data = JSON.parse(event.data);
       console.log("[LocalMicSocket] Resultado recibido del servidor:", data);
-      if (data.type === "turn_result") {
-        renderTurnCard({
-          speaker_id: "carlos",
-          original_text: data.original_text,
-          translated_text: data.translated_text
-        });
-        if (data.audio_base64 && audioPlaybackToggle.checked) {
-          playSynthesizedAudio(data.audio_base64, data.format || "wav");
-        }
+      // Play synthesized audio if enabled; rendering to teleprompter is handled by TurnCompleted event
+      if (data.type === "turn_result" && data.audio_base64 && audioPlaybackToggle && audioPlaybackToggle.checked) {
+        playSynthesizedAudio(data.audio_base64, data.format || "wav");
       }
     } catch (e) {
       console.error("[LocalMicSocket] Error parseando respuesta de audio:", e);
@@ -171,13 +165,13 @@ function connectLocalMicStream() {
 
 function connectMeetAudioStream() {
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-  const wsUrl = `${protocol}//${window.location.host}/ws/audio-stream/${SESSION_ID}/alice`;
+  const wsUrl = `${protocol}//${window.location.host}/ws/audio-stream/${SESSION_ID}/remote`;
 
   console.log(`[MeetAudioSocket] Conectando a ${wsUrl}...`);
   meetAudioSocket = new WebSocket(wsUrl);
 
   meetAudioSocket.onopen = () => {
-    console.log("[MeetAudioSocket] Canal de audio remoto conectado exitosamente (alice)");
+    console.log("[MeetAudioSocket] Canal de audio remoto conectado exitosamente");
   };
 
   meetAudioSocket.onerror = (err) => {
@@ -192,15 +186,9 @@ function connectMeetAudioStream() {
     try {
       const data = JSON.parse(event.data);
       console.log("[MeetAudioSocket] Resultado recibido del servidor:", data);
-      if (data.type === "turn_result") {
-        renderTurnCard({
-          speaker_id: "alice",
-          original_text: data.original_text,
-          translated_text: data.translated_text
-        });
-        if (data.audio_base64 && audioPlaybackToggle.checked) {
-          playSynthesizedAudio(data.audio_base64, data.format || "wav");
-        }
+      // Play synthesized audio if enabled; rendering to teleprompter is handled by TurnCompleted event
+      if (data.type === "turn_result" && data.audio_base64 && audioPlaybackToggle && audioPlaybackToggle.checked) {
+        playSynthesizedAudio(data.audio_base64, data.format || "wav");
       }
     } catch (e) {
       console.error("[MeetAudioSocket] Error parseando respuesta de audio remoto:", e);
@@ -228,26 +216,40 @@ function handleIncomingEvent(payload) {
 
 }
 
+const renderedTurnIds = new Set();
+
 function renderTurnCard(turn) {
+  if (!turn) return;
+
+  const turnId = turn.turn_id || turn.id;
+  if (turnId) {
+    if (renderedTurnIds.has(turnId)) return;
+    renderedTurnIds.add(turnId);
+  }
+
   const placeholder = feed.querySelector(".feed-empty-state") || feed.querySelector("p");
   if (placeholder) {
     feed.innerHTML = "";
   }
 
-  const isSpeakerA = turn.speaker_id === "carlos" || turn.source_lang === "es";
-  const speakerClass = isSpeakerA ? "speaker-a" : "speaker-b";
-  const speakerName = isSpeakerA ? "Carlos (ES)" : "Alice (EN)";
+  const srcLang = (turn.source_lang || turn.language || "es").toUpperCase();
+  const tgtLang = (turn.target_lang || (srcLang === "ES" ? "EN" : "ES")).toUpperCase();
+  const isLocal = turn.speaker_id === "local" || !turn.speaker_id || turn.speaker_id === "carlos";
+  const speakerClass = isLocal ? "speaker-a" : "speaker-b";
+  const speakerLabel = isLocal ? "Voz Local" : "Voz Remota";
+  const speakerHeader = `${speakerLabel} (${srcLang} → ${tgtLang})`;
 
   const card = document.createElement("article");
   card.className = `turn-card ${speakerClass}`;
-  card.setAttribute("aria-label", `Turno de ${speakerName}`);
+  if (turnId) card.id = `turn-${turnId}`;
+  card.setAttribute("aria-label", `Turno de ${speakerHeader}`);
 
   const timeStr = new Date().toLocaleTimeString();
   const arrowSvg = `<svg class="translation-indicator" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
 
   card.innerHTML = `
     <div class="turn-header">
-      <span style="font-weight: 600;">${speakerName}</span>
+      <span style="font-weight: 600;">${speakerHeader}</span>
       <time datetime="${new Date().toISOString()}">${timeStr}</time>
     </div>
     <div class="turn-original">“${escapeHtml(turn.original_text)}”</div>
@@ -270,54 +272,18 @@ function escapeHtml(text) {
   return div.innerHTML;
 }
 
-// Active Speaker Selector (Carlos [ES] vs Alice [EN])
-let currentSpeakerId = "carlos";
-const chipSpeakerA = document.getElementById("chipSpeakerA") || document.querySelector(".chip-speaker-a");
-const chipSpeakerB = document.getElementById("chipSpeakerB") || document.querySelector(".chip-speaker-b");
-
-if (chipSpeakerA && chipSpeakerB) {
-  chipSpeakerA.addEventListener("click", () => {
-    currentSpeakerId = "carlos";
-    chipSpeakerA.classList.add("active-speaker");
-    chipSpeakerB.classList.remove("active-speaker");
-    chipSpeakerA.setAttribute("aria-label", "Hablante Carlos en Español (Activo)");
-    chipSpeakerB.setAttribute("aria-label", "Hablante Alice en Inglés");
-    if (recordText) {
-      recordText.textContent = isLocalRecording ? "Detener Grabación (Carlos - ES)" : "Iniciar Grabación (Carlos - ES)";
-    }
-    if (recordBtn) {
-      recordBtn.setAttribute("aria-label", isLocalRecording ? "Detener grabación de audio (Carlos - ES)" : "Iniciar grabación de audio (Carlos - ES)");
-    }
-    console.log("[AudioRecorder] Hablante activo seleccionado: Carlos (ES)");
-  });
-
-  chipSpeakerB.addEventListener("click", () => {
-    currentSpeakerId = "alice";
-    chipSpeakerB.classList.add("active-speaker");
-    chipSpeakerA.classList.remove("active-speaker");
-    chipSpeakerB.setAttribute("aria-label", "Hablante Alice en Inglés (Activo)");
-    chipSpeakerA.setAttribute("aria-label", "Hablante Carlos en Español");
-    if (recordText) {
-      recordText.textContent = isLocalRecording ? "Detener Grabación (Alice - EN)" : "Iniciar Grabación (Alice - EN)";
-    }
-    if (recordBtn) {
-      recordBtn.setAttribute("aria-label", isLocalRecording ? "Detener grabación de audio (Alice - EN)" : "Iniciar grabación de audio (Alice - EN)");
-    }
-    console.log("[AudioRecorder] Hablante activo seleccionado: Alice (EN)");
-  });
-}
+// Universal Audio Channel Selection
+let currentSpeakerId = "local";
 
 // 5. Microphone Recording (Toggle On/Off)
 async function startLocalRecording() {
   try {
-    const activeSocket = currentSpeakerId === "alice" ? meetAudioSocket : localMicSocket;
-    if (!activeSocket || activeSocket.readyState !== WebSocket.OPEN) {
-      console.warn(`[AudioRecorder] Socket de audio para ${currentSpeakerId} no está conectado. Reintentando...`);
-      if (currentSpeakerId === "alice") connectMeetAudioStream();
-      else connectLocalMicStream();
+    if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
+      console.warn("[AudioRecorder] Socket de audio local no está conectado. Reintentando...");
+      connectLocalMicStream();
     }
 
-    console.log(`[AudioRecorder] Solicitando acceso al micrófono (Hablante: ${currentSpeakerId})...`);
+    console.log("[AudioRecorder] Solicitando acceso al micrófono...");
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
     localAudioChunks = [];
     localMicRecorder = new MediaRecorder(stream);
@@ -344,17 +310,16 @@ async function startLocalRecording() {
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
 
-      console.log(`[AudioRecorder] Enviando audio base64 de ${currentSpeakerId} (${base64Audio.length} caracteres) al servidor...`);
+      console.log(`[AudioRecorder] Enviando audio base64 (${base64Audio.length} caracteres) al servidor...`);
 
-      const targetSocket = currentSpeakerId === "alice" ? meetAudioSocket : localMicSocket;
-      if (targetSocket && targetSocket.readyState === WebSocket.OPEN) {
-        targetSocket.send(JSON.stringify({
+      if (localMicSocket && localMicSocket.readyState === WebSocket.OPEN) {
+        localMicSocket.send(JSON.stringify({
           audio_base64: base64Audio,
           mime_type: localMicRecorder.mimeType || "audio/webm",
         }));
-        console.log(`[AudioRecorder] Audio de ${currentSpeakerId} enviado exitosamente por WebSocket`);
+        console.log("[AudioRecorder] Audio enviado exitosamente por WebSocket");
       } else {
-        console.error(`[AudioRecorder] No se pudo enviar el audio de ${currentSpeakerId}: WebSocket cerrado o no listo`);
+        console.error("[AudioRecorder] No se pudo enviar el audio: WebSocket cerrado o no listo");
       }
 
       stream.getTracks().forEach(track => track.stop());
@@ -363,9 +328,9 @@ async function startLocalRecording() {
     localMicRecorder.start();
     isLocalRecording = true;
     recordBtn.classList.add("recording");
-    const labelLang = currentSpeakerId === "alice" ? "Alice - EN" : "Carlos - ES";
-    recordText.textContent = `Detener Grabación (${labelLang})`;
-    console.log(`[AudioRecorder] Grabación iniciada en modo Toggle para ${currentSpeakerId}`);
+    if (recordText) recordText.textContent = "Detener Grabación";
+    recordBtn.setAttribute("aria-label", "Detener grabación de audio");
+    console.log("[AudioRecorder] Grabación iniciada en modo Universal");
   } catch (err) {
     console.error("[AudioRecorder] Error accediendo al micrófono:", err);
     alert("No se pudo acceder al micrófono: " + err.message);
@@ -378,8 +343,8 @@ function stopLocalRecording() {
     localMicRecorder.stop();
     isLocalRecording = false;
     recordBtn.classList.remove("recording");
-    const labelLang = currentSpeakerId === "alice" ? "Alice - EN" : "Carlos - ES";
-    recordText.textContent = `Iniciar Grabación (${labelLang})`;
+    if (recordText) recordText.textContent = "Iniciar Grabación";
+    recordBtn.setAttribute("aria-label", "Iniciar grabación de audio");
   }
 }
 
@@ -394,11 +359,20 @@ if (recordBtn) {
   });
 }
 
-clearFeedBtn.addEventListener("click", () => {
-  feed.innerHTML = `<div style="text-align: center; color: var(--text-muted); margin-top: 3rem;">
-    <p>Teleprompter limpio.</p>
-  </div>`;
-});
+if (clearFeedBtn) {
+  clearFeedBtn.addEventListener("click", () => {
+    renderedTurnIds.clear();
+    feed.innerHTML = `
+      <div class="feed-empty-state">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon" aria-hidden="true" focusable="false">
+          <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
+        </svg>
+        <p>Presioná el botón de voz para iniciar la captura.</p>
+        <span>Las transcripciones originales y traducciones en vivo aparecerán aquí con tipografía optimizada.</span>
+      </div>
+    `;
+  });
+}
 
 // 6. Scenario Selector Handling (In-person vs Videocall Dual-Channel)
 if (scenarioInPerson && scenarioVideocall) {

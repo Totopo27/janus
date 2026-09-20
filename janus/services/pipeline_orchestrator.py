@@ -65,20 +65,30 @@ class PipelineOrchestrator:
             logger.debug("VAD detected no speech in audio chunk.")
             return None
 
-        # Identify current speaker and counterpart target language
+        # Identify current speaker and counterpart flexibly
         current_speaker = session.get_speaker(speaker_id)
         if not current_speaker:
-            raise ValueError(f"Speaker '{speaker_id}' does not belong to session '{session.session_id}'.")
+            current_speaker = session.speaker_a
 
         counterpart = session.get_counterpart(speaker_id)
         if not counterpart:
-            raise ValueError(f"No counterpart found for speaker '{speaker_id}'.")
+            counterpart = session.speaker_b
 
-        source_lang = current_speaker.native_language
-        target_lang = counterpart.native_language
+        # 2. Automatic Speech Recognition (STT with auto-detection of incoming language)
+        transcription = self.stt.transcribe(audio=audio, language=None)
+        if not transcription or not transcription.text.strip():
+            logger.debug(f"[{session.session_id}] No speech recognized or silence in audio chunk.")
+            return None
 
-        # 2. Automatic Speech Recognition (STT)
-        transcription = self.stt.transcribe(audio=audio, language=source_lang)
+        # Automatically determine source and target languages based on detected speech
+        source_lang = transcription.language or "es"
+        if source_lang.startswith("es"):
+            target_lang = "en"
+        elif source_lang.startswith("en"):
+            target_lang = "es"
+        else:
+            target_lang = "en"
+
         logger.info(f"[{session.session_id}] Transcribed ({source_lang}): '{transcription.text}'")
 
         if self.broadcaster:
@@ -88,13 +98,10 @@ class PipelineOrchestrator:
                     session_id=session.session_id,
                     speaker_id=speaker_id,
                     text=transcription.text,
-                    language=transcription.language,
+                    language=source_lang,
                     confidence=transcription.confidence,
                 ),
             )
-
-        if not transcription.text.strip():
-            return None
 
         # 3. Machine Translation (MT)
         translation = self.mt.translate(

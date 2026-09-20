@@ -85,20 +85,14 @@
 
     <!-- Session Participants, Inference Telemetry & Audio Controls Bar -->
     <section class="session-strip" aria-label="Controles de la sesión y participantes">
-      <div class="participants-group" role="region" aria-label="Selección de hablante activo">
-        <button type="button" class="participant-chip chip-speaker-a" id="chipSpeakerA" aria-label="Hablante Carlos en Español">
-          <span class="participant-name">Carlos</span>
-          <span class="lang-tag">ES</span>
-        </button>
-        <div class="exchange-indicator" aria-hidden="true">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
-            <path d="M8 3 4 7l4 4"/><path d="M4 7h16"/><path d="m16 21 4-4-4-4"/><path d="M20 17H4"/>
+      <div class="participants-group" role="region" aria-label="Modo de detección">
+        <div class="auto-lang-chip" id="autoLangBadge" title="Detección automática de idioma activada">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
           </svg>
+          <span class="participant-name">Detección de Idioma</span>
+          <span class="lang-tag">AUTO</span>
         </div>
-        <button type="button" class="participant-chip chip-speaker-b" id="chipSpeakerB" aria-label="Hablante Alice en Inglés">
-          <span class="participant-name">Alice</span>
-          <span class="lang-tag">EN</span>
-        </button>
       </div>
 
       <!-- Subtle BYOM Inference Telemetry Indicator -->
@@ -143,14 +137,14 @@
         </div>
 
         <div class="voice-controls-dock">
-          <button id="recordBtn" class="btn-voice-record" aria-label="Iniciar grabación de audio (Carlos - ES)">
+          <button id="recordBtn" class="btn-voice-record" aria-label="Iniciar grabación de audio">
             <div class="record-pulse-ring" aria-hidden="true"></div>
             <span id="recordIcon" class="record-icon-slot" aria-hidden="true">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
               </svg>
             </span>
-            <span id="recordText" class="record-label">Iniciar Grabación (Carlos - ES)</span>
+            <span id="recordText" class="record-label">Iniciar Grabación</span>
           </button>
         </div>
       </section>

@@ -43,21 +43,42 @@ class SherpaSttAdapter(ISpeechRecognizer):
             import sherpa_onnx
             logger.info("Initializing Sherpa-ONNX offline recognizer...")
 
-            # Auto-detect default model paths in assets/models/whisper if not explicitly set
-            base_dir = os.path.join(os.getcwd(), "assets", "models", "whisper")
-            enc = self.whisper_encoder or os.environ.get("WHISPER_ENCODER") or os.path.join(base_dir, "tiny-encoder.onnx")
-            dec = self.whisper_decoder or os.environ.get("WHISPER_DECODER") or os.path.join(base_dir, "tiny-decoder.onnx")
-            tok = self.tokens or os.environ.get("WHISPER_TOKENS") or os.path.join(base_dir, "tiny-tokens.txt")
+            # Auto-detect default model paths in assets/models/whisper relative to project root
+            project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+            base_dir = os.path.join(project_root, "assets", "models", "whisper")
 
-            if enc and os.path.exists(enc) and dec and os.path.exists(dec):
+            enc = self.whisper_encoder or os.environ.get("WHISPER_ENCODER")
+            if not enc or not os.path.exists(enc):
+                for candidate in ["tiny-encoder.int8.onnx", "tiny-encoder.onnx"]:
+                    p = os.path.join(base_dir, candidate)
+                    if os.path.exists(p):
+                        enc = p
+                        break
+
+            dec = self.whisper_decoder or os.environ.get("WHISPER_DECODER")
+            if not dec or not os.path.exists(dec):
+                for candidate in ["tiny-decoder.int8.onnx", "tiny-decoder.onnx"]:
+                    p = os.path.join(base_dir, candidate)
+                    if os.path.exists(p):
+                        dec = p
+                        break
+
+            tok = self.tokens or os.environ.get("WHISPER_TOKENS")
+            if not tok or not os.path.exists(tok):
+                p = os.path.join(base_dir, "tiny-tokens.txt")
+                if os.path.exists(p):
+                    tok = p
+
+            if enc and os.path.exists(enc) and dec and os.path.exists(dec) and tok and os.path.exists(tok):
                 recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
                     encoder=enc,
                     decoder=dec,
                     tokens=tok,
+                    language="",  # Auto-detect language natively from incoming speech
                     num_threads=self.num_threads,
                 )
                 self._recognizer = recognizer
-                logger.info("Sherpa-ONNX Whisper recognizer initialized successfully from model files.")
+                logger.info(f"Sherpa-ONNX Whisper recognizer initialized successfully from {os.path.basename(enc)}.")
             elif self.encoder and os.path.exists(self.encoder):
                 recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
                     tokens=self.tokens,
@@ -69,10 +90,10 @@ class SherpaSttAdapter(ISpeechRecognizer):
                 self._recognizer = recognizer
                 logger.info("Sherpa-ONNX Transducer recognizer initialized successfully.")
             else:
-                logger.warning("No valid Sherpa-ONNX model files found on disk. Operating in resilient fallback mode.")
+                logger.warning(f"No valid Sherpa-ONNX model files found at {base_dir}. STT operating without model.")
                 self._is_fallback = True
         except Exception as e:
-            logger.warning(f"Could not load Sherpa-ONNX native recognizer: {e}. Fallback active.")
+            logger.warning(f"Could not load Sherpa-ONNX native recognizer: {e}.")
             self._is_fallback = True
 
     def transcribe(
@@ -94,28 +115,34 @@ class SherpaSttAdapter(ISpeechRecognizer):
                 stream.accept_waveform(audio.sample_rate, samples)
                 self._recognizer.decode_stream(stream)
                 text = stream.result.text.strip()
-                if text:
+                detected_lang = getattr(stream.result, "lang", None) or language or "es"
+                
+                # Filter out background noise artifacts
+                if text.lower() in ["[music]", "[musica]", "[applause]", "(music)", "(musica)", ""]:
                     return TranscriptionResult(
-                        text=text,
-                        language=language or "es",
+                        text="",
+                        language=detected_lang,
                         start_time=0.0,
                         end_time=audio.duration_seconds,
-                        confidence=0.95,
+                        confidence=0.0,
                     )
+
+                logger.info(f"Sherpa-ONNX Whisper recognized '{text}' (detected language: {detected_lang})")
+                return TranscriptionResult(
+                    text=text,
+                    language=detected_lang,
+                    start_time=0.0,
+                    end_time=audio.duration_seconds,
+                    confidence=0.95,
+                )
             except Exception as e:
                 logger.error(f"Sherpa-ONNX stream decoding error: {e}")
 
-        # Language-aware fallback transcription for testing/demonstration when model files are not present
-        lang = (language or "es").lower()
-        if lang.startswith("es"):
-            simulated_text = "Intervención de voz registrada en español para la reunión."
-        else:
-            simulated_text = "Voice speech intervention recorded in English for the meeting."
-
+        # Return empty result when no speech or model unavailable - never inject fake hallucinated dialogue
         return TranscriptionResult(
-            text=simulated_text,
-            language=lang,
+            text="",
+            language=language or "es",
             start_time=0.0,
             end_time=audio.duration_seconds,
-            confidence=0.90,
+            confidence=0.0,
         )

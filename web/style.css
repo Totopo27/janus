@@ -390,6 +390,23 @@ main {
   gap: 0.6rem;
 }
 
+.auto-lang-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.35rem 0.75rem;
+  background: var(--bg-card);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--accent-telemetry);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-size: 0.82rem;
+}
+
+.auto-lang-chip svg {
+  color: var(--accent-telemetry);
+}
+
 .participant-chip {
   display: inline-flex;
   align-items: center;
