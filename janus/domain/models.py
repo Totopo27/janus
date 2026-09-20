@@ -106,7 +106,7 @@ class Session:
 
 @dataclass
 class ActionItem:
-    """A concrete task or commitment extracted from a conversation (Zoom-style)."""
+    """A concrete task or commitment extracted from a conversation."""
     assignee: str
     task: str
     completed: bool = False
@@ -176,7 +176,7 @@ class ChatMessage:
 
 @dataclass
 class LiveMeetingNotes:
-    """Real-time structured meeting notes continuously updated by AI Companion."""
+    """Real-time structured meeting notes continuously updated by Janus."""
     meeting_id: str
     current_topic: str = "Inicio de la reunión"
     key_takeaways: List[str] = field(default_factory=list)

@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 class SqliteMeetingRepository(IMeetingRepository):
     """
     Local-first SQLite repository implementing persistent storage
-    for meetings, dialogue turns, speaker profiles, and Zoom-style meeting notes,
+    for meetings, dialogue turns, speaker profiles, and structured meeting notes,
     with FTS5 full-text search and hierarchical topic_key indexing.
     """
 

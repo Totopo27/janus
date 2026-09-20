@@ -34,8 +34,8 @@ def create_app(
 ) -> FastAPI:
     """Factory creating and configuring the Janus FastAPI application."""
     app = FastAPI(
-        title="Janus S2ST Platform",
-        description="Local-First On-Device Speech-to-Speech Translation & Live Teleprompter with Zoom-style Meeting Notes & BYOM",
+        title="Janus",
+        description="Janus",
         version="0.2.0",
     )
 
@@ -74,7 +74,7 @@ def create_app(
     if chat_service is None:
         chat_service = MeetingChatService(repository=meeting_repo, llm_provider=llm_provider)
 
-    # Initialize Zoom AI Companion Live Notetaker
+    # Initialize Live Notetaker
     if live_notetaker is None:
         live_notetaker = LiveNotetakerService(
             repository=meeting_repo,

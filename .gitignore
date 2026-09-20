@@ -39,7 +39,9 @@ results/
 *.db-shm
 *.sqlite3
 
-# IDE
+# IDE & Agent Tooling
 .vscode/
 .idea/
 *.swp
+.agents/
+skills-lock.json

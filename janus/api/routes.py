@@ -241,7 +241,7 @@ def create_api_router(
         return {"session_id": session_id, "closed": True}
 
     # -------------------------------------------------------------
-    # Meeting & Zoom-Style Notes Routes (Persistent SQLite Storage)
+    # Meeting & Structured Notes Routes (Persistent SQLite Storage)
     # -------------------------------------------------------------
 
     @router.post(
@@ -324,7 +324,7 @@ def create_api_router(
     @router.post("/meetings/{meeting_id}/finalize", response_model=MeetingResponse)
     def finalize_meeting(meeting_id: str):
         """
-        Finalizes a meeting and automatically generates Zoom-style executive summary,
+        Finalizes a meeting and automatically generates executive summary,
         key points, and action items.
         """
         if not notes_service or not meeting_repo:
@@ -393,7 +393,7 @@ def create_api_router(
 
     @router.get("/meetings/{meeting_id}/live-notes", response_model=LiveNotesResponse)
     def get_live_notes(meeting_id: str):
-        """Returns real-time Zoom AI Companion structured notes (topic, takeaways, action items)."""
+        """Returns real-time Janus structured notes (topic, takeaways, action items)."""
         if not live_notetaker:
             raise HTTPException(status_code=503, detail="Live notetaker service not configured")
         notes = live_notetaker.get_live_notes(meeting_id)
@@ -439,7 +439,7 @@ def create_api_router(
 
     @router.post("/meetings/{meeting_id}/catch-up", response_model=CatchUpResponse)
     def catch_up_meeting(meeting_id: str, request: CatchUpRequest = CatchUpRequest()):
-        """Zoom AI Companion 'Catch Me Up': concise executive recap of the last few minutes."""
+        """Janus 'Catch Me Up': concise executive recap of the last few minutes."""
         if not live_notetaker:
             raise HTTPException(status_code=503, detail="Live notetaker service not configured")
         summary = live_notetaker.catch_up(meeting_id=meeting_id, last_n_turns=request.last_n_turns)

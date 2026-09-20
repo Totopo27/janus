@@ -14,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class LiveNotetakerService:
     """
-    Continuous real-time meeting notetaker modeled after Zoom AI Companion.
+    Continuous real-time meeting notetaker for Janus.
     Listens incrementally to dialogue turns, updates current topics,
     extracts key takeaways, tracks action items, and generates live catch-ups.
     """
@@ -70,7 +70,7 @@ class LiveNotetakerService:
         ])
 
         system_prompt = (
-            "Eres el asistente inteligente Zoom AI Companion para esta reunión. "
+            "Eres el asistente inteligente Janus para esta reunión. "
             "Tu trabajo es escuchar activamente la conversación y redactar notas ejecutivas en vivo. "
             "Debes responder ÚNICAMENTE con un JSON válido que tenga la siguiente estructura exacta:\n"
             "{\n"
@@ -152,7 +152,7 @@ class LiveNotetakerService:
 
     def catch_up(self, meeting_id: str, last_n_turns: int = 6) -> str:
         """
-        Zoom AI Companion 'Catch Me Up' feature.
+        Janus 'Catch Me Up' feature.
         Generates an instant 2-3 sentence executive recap of what happened in the recent turns.
         """
         meeting = self.repository.get_meeting(meeting_id)
@@ -166,7 +166,7 @@ class LiveNotetakerService:
         ])
 
         system_prompt = (
-            "Eres Zoom AI Companion. Un participante pide ponerse al día (Catch Me Up). "
+            "Eres el asistente inteligente Janus. Un participante pide ponerse al día (Catch Me Up). "
             "Responde en 2 o 3 oraciones concisas, directas y enérgicas resumiendo qué se discutió, "
             "qué decisiones se tomaron y si se asignó alguna tarea."
         )

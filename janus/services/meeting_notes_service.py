@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class MeetingNotesService:
     """
-    Generates Zoom-style structured meeting notes, executive summaries,
+    Generates structured meeting notes, executive summaries,
     and action items from recorded bilingual conversations.
     """
 

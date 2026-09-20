@@ -171,7 +171,7 @@ class PipelineOrchestrator:
                 ),
             )
 
-        # 7. Notify Live Notetaker (Zoom AI Companion) in background
+        # 7. Notify Live Notetaker in background
         if self.live_notetaker:
             try:
                 asyncio.get_running_loop().create_task(

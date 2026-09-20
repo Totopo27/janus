@@ -135,7 +135,7 @@ def test_api_meeting_lifecycle_and_notes(tmp_path):
     assert res.status_code == 200
     assert len(res.json()) >= 1
 
-    # 3. Finalize meeting & generate Zoom-style notes
+    # 3. Finalize meeting & generate notes
     res = client.post("/api/meetings/board_sync_2026/finalize")
     assert res.status_code == 200
     data = res.json()

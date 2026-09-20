@@ -54,7 +54,7 @@ def resolve_port(preferred_port: int, host: str = "127.0.0.1") -> int:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Janus S2ST & Zoom AI Companion Server")
+    parser = argparse.ArgumentParser(description="Janus")
     parser.add_argument(
         "--port",
         type=int,
@@ -71,7 +71,7 @@ if __name__ == "__main__":
 
     target_port = resolve_port(args.port, args.host)
 
-    print(f"[*] Iniciando Janus S2ST & Zoom AI Companion en: {PROJECT_ROOT}")
+    print(f"[*] Iniciando Janus en: {PROJECT_ROOT}")
     print(f"[*] Interfaz Web disponible en: http://{args.host}:{target_port}")
 
     uvicorn.run(
