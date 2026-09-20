@@ -34,17 +34,43 @@ def download_models(target_dir: str = "assets/models"):
     except Exception as e:
         logger.warning(f"Could not download Supertonic automatically: {e}")
 
-    # 2. Sherpa-ONNX Whisper Tiny / Small Multilingual
-    sherpa_dir = os.path.join(target_dir, "sherpa-whisper")
-    logger.info("Downloading Sherpa-ONNX Whisper models...")
+    # 2. Sherpa-ONNX Whisper Base / Tiny Multilingual
+    whisper_dir = os.path.join(target_dir, "whisper")
+    os.makedirs(whisper_dir, exist_ok=True)
+    logger.info("Downloading Sherpa-ONNX Whisper models (Base INT8)...")
     try:
-        snapshot_download(
-            repo_id="csukuangfj/sherpa-onnx-whisper-tiny",
-            local_dir=sherpa_dir,
-        )
-        logger.info(f"Sherpa-ONNX models saved in: {sherpa_dir}")
+        from huggingface_hub import hf_hub_download
+        for fname in ["base-encoder.int8.onnx", "base-decoder.int8.onnx", "base-tokens.txt"]:
+            target_path = os.path.join(whisper_dir, fname)
+            if not os.path.exists(target_path):
+                logger.info(f"Downloading {fname}...")
+                hf_hub_download(
+                    repo_id="csukuangfj/sherpa-onnx-whisper-base",
+                    filename=fname,
+                    local_dir=whisper_dir,
+                )
+        logger.info(f"Sherpa-ONNX Whisper Base models saved in: {whisper_dir}")
     except Exception as e:
-        logger.warning(f"Could not download Sherpa-ONNX models automatically: {e}")
+        logger.warning(f"Could not download Sherpa-ONNX Whisper models automatically: {e}")
+
+    # 3. Sherpa-ONNX Speaker Diarization / Embedding Models (CAM++)
+    diarization_dir = os.path.join(target_dir, "diarization")
+    os.makedirs(diarization_dir, exist_ok=True)
+    logger.info("Downloading Speaker Embedding model (CAM++ 3D-Speaker)...")
+    try:
+        from huggingface_hub import hf_hub_download
+        campplus_file = "3dspeaker_speech_campplus_sv_en_voxceleb_16k.onnx"
+        target_path = os.path.join(diarization_dir, campplus_file)
+        if not os.path.exists(target_path):
+            logger.info(f"Downloading {campplus_file}...")
+            hf_hub_download(
+                repo_id="csukuangfj/speaker-embedding-models",
+                filename=campplus_file,
+                local_dir=diarization_dir,
+            )
+        logger.info(f"Speaker Diarization model saved in: {diarization_dir}")
+    except Exception as e:
+        logger.warning(f"Could not download Speaker Diarization model automatically: {e}")
 
     logger.info("Model download process completed.")
 

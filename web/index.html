@@ -85,14 +85,18 @@
 
     <!-- Session Participants, Inference Telemetry & Audio Controls Bar -->
     <section class="session-strip" aria-label="Controles de la sesión y participantes">
-      <div class="participants-group" role="region" aria-label="Modo de detección">
-        <div class="auto-lang-chip" id="autoLangBadge" title="Detección automática de idioma activada">
+      <div class="language-selector-group" role="region" aria-label="Idioma de entrada">
+        <label for="inputLanguageSelect" class="lang-select-label">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
             <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
           </svg>
-          <span class="participant-name">Detección de Idioma</span>
-          <span class="lang-tag">AUTO</span>
-        </div>
+          <span class="participant-name">Idioma Entrada:</span>
+        </label>
+        <select id="inputLanguageSelect" class="lang-select-input" aria-label="Seleccionar idioma de entrada para transcripción">
+          <option value="es" selected>Español (ES) - Alta Fidelidad</option>
+          <option value="en">English (EN)</option>
+          <option value="auto">Auto-Detección</option>
+        </select>
       </div>
 
       <!-- Subtle BYOM Inference Telemetry Indicator -->

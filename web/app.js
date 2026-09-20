@@ -20,6 +20,7 @@ const recordText = document.getElementById("recordText");
 const audioPlaybackToggle = document.getElementById("audioPlaybackToggle");
 const clearFeedBtn = document.getElementById("clearFeedBtn");
 const finalizeBtn = document.getElementById("finalizeBtn");
+const inputLanguageSelect = document.getElementById("inputLanguageSelect");
 
 // Scenario Elements
 const scenarioInPerson = document.getElementById("scenarioInPerson");
@@ -70,15 +71,15 @@ async function initSession() {
     const payload = {
       session_id: SESSION_ID,
       speaker_a: {
-        speaker_id: "local",
-        name: "Hablante Local",
-        native_language: "auto",
+        speaker_id: "speaker_1",
+        name: "Hablante 1",
+        native_language: "es",
         preferred_voice_style: "default"
       },
       speaker_b: {
-        speaker_id: "remote",
-        name: "Hablante Remoto",
-        native_language: "auto",
+        speaker_id: "speaker_2",
+        name: "Hablante 2",
+        native_language: "es",
         preferred_voice_style: "default"
       }
     };
@@ -234,9 +235,18 @@ function renderTurnCard(turn) {
 
   const srcLang = (turn.source_lang || turn.language || "es").toUpperCase();
   const tgtLang = (turn.target_lang || (srcLang === "ES" ? "EN" : "ES")).toUpperCase();
-  const isLocal = turn.speaker_id === "local" || !turn.speaker_id || turn.speaker_id === "carlos";
-  const speakerClass = isLocal ? "speaker-a" : "speaker-b";
-  const speakerLabel = isLocal ? "Voz Local" : "Voz Remota";
+
+  let speakerClass = "speaker-a";
+  let speakerLabel = turn.speaker_name || "Hablante 1";
+
+  if (turn.speaker_id === "speaker_2" || turn.speaker_id === "remote") {
+    speakerClass = "speaker-b";
+    speakerLabel = turn.speaker_name || "Hablante 2";
+  } else if (turn.speaker_id === "speaker_1" || turn.speaker_id === "local") {
+    speakerClass = "speaker-a";
+    speakerLabel = turn.speaker_name || "Hablante 1";
+  }
+
   const speakerHeader = `${speakerLabel} (${srcLang} → ${tgtLang})`;
 
   const card = document.createElement("article");
@@ -310,14 +320,16 @@ async function startLocalRecording() {
         new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
       );
 
-      console.log(`[AudioRecorder] Enviando audio base64 (${base64Audio.length} caracteres) al servidor...`);
+      const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "es";
+      console.log(`[AudioRecorder] Enviando audio base64 (${base64Audio.length} caracteres, idioma: ${selectedLang}) al servidor...`);
 
       if (localMicSocket && localMicSocket.readyState === WebSocket.OPEN) {
         localMicSocket.send(JSON.stringify({
           audio_base64: base64Audio,
           mime_type: localMicRecorder.mimeType || "audio/webm",
+          language: selectedLang,
         }));
-        console.log("[AudioRecorder] Audio enviado exitosamente por WebSocket");
+        console.log(`[AudioRecorder] Audio enviado exitosamente por WebSocket (idioma: ${selectedLang})`);
       } else {
         console.error("[AudioRecorder] No se pudo enviar el audio: WebSocket cerrado o no listo");
       }
@@ -436,8 +448,12 @@ async function startMeetAudioCapture() {
         const base64Audio = btoa(
           new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
         );
+        const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "auto";
         if (meetAudioSocket && meetAudioSocket.readyState === WebSocket.OPEN) {
-          meetAudioSocket.send(JSON.stringify({ audio_base64: base64Audio }));
+          meetAudioSocket.send(JSON.stringify({
+            audio_base64: base64Audio,
+            language: selectedLang,
+          }));
         }
       }
     };

@@ -11,6 +11,7 @@ from janus.services.pipeline_orchestrator import PipelineOrchestrator
 from janus.services.meeting_notes_service import MeetingNotesService
 from janus.services.meeting_chat_service import MeetingChatService
 from janus.services.live_notetaker_service import LiveNotetakerService
+from janus.services.speaker_diarization_service import SpeakerDiarizationService
 from janus.adapters.llm.factory import LLMProviderFactory
 from janus.adapters.storage.sqlite_repository import SqliteMeetingRepository
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
@@ -30,6 +31,7 @@ def create_app(
     chat_service: Optional[MeetingChatService] = None,
     live_notetaker: Optional[LiveNotetakerService] = None,
     llm_provider: Optional[ILLMProvider] = None,
+    diarizer: Optional[SpeakerDiarizationService] = None,
     db_path: str = "janus.db",
 ) -> FastAPI:
     """Factory creating and configuring the Janus FastAPI application."""
@@ -38,6 +40,10 @@ def create_app(
         description="Janus",
         version="0.2.0",
     )
+
+    project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    if not os.path.isabs(db_path):
+        db_path = os.path.join(project_root, db_path)
 
     # Local-only CORS: allow localhost on any port (dev) and file:// origins.
     # allow_origins=["*"] combined with allow_credentials=True is invalid per the
@@ -89,6 +95,8 @@ def create_app(
         stt = SherpaSttAdapter()
         mt = MarianTranslator()
         tts = SupertonicTtsAdapter()
+        if diarizer is None:
+            diarizer = SpeakerDiarizationService()
         orchestrator = PipelineOrchestrator(
             stt_engine=stt,
             translation_engine=mt,
@@ -96,6 +104,7 @@ def create_app(
             broadcaster=broadcaster,
             storage_repo=meeting_repo,
             live_notetaker=live_notetaker,
+            diarizer=diarizer,
         )
 
     # Health check

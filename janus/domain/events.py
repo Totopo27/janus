@@ -62,6 +62,7 @@ class TurnCompletedEvent(DomainEvent):
     session_id: str = ""
     turn_id: str = ""
     speaker_id: str = ""
+    speaker_name: str = ""
     original_text: str = ""
     translated_text: str = ""
     source_lang: str = ""

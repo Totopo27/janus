@@ -390,11 +390,12 @@ main {
   gap: 0.6rem;
 }
 
-.auto-lang-chip {
+.auto-lang-chip,
+.language-selector-group {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.35rem 0.75rem;
+  padding: 0.3rem 0.65rem;
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--accent-telemetry);
@@ -403,8 +404,39 @@ main {
   font-size: 0.82rem;
 }
 
-.auto-lang-chip svg {
+.lang-select-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-size: 0.8rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.auto-lang-chip svg,
+.lang-select-label svg {
   color: var(--accent-telemetry);
+}
+
+.lang-select-input {
+  background: var(--bg-surface);
+  color: var(--text-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.45rem;
+  font-size: 0.78rem;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  cursor: pointer;
+  outline: none;
+  transition: border-color 150ms ease, background-color 150ms ease;
+}
+
+.lang-select-input:hover,
+.lang-select-input:focus {
+  border-color: var(--accent-telemetry);
+  background: var(--bg-elevated);
 }
 
 .participant-chip {

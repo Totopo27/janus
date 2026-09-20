@@ -75,6 +75,7 @@ def create_websocket_router(
                 audio_bytes = b""
                 mime_type = "audio/webm"
 
+                requested_lang = None
                 if "bytes" in message and message["bytes"]:
                     audio_bytes = message["bytes"]
                     logger.info(f"[{session_id}:{speaker_id}] Received raw binary audio chunk ({len(audio_bytes)} bytes)")
@@ -84,7 +85,8 @@ def create_websocket_router(
                         if "audio_base64" in parsed:
                             audio_bytes = base64.b64decode(parsed["audio_base64"])
                             mime_type = parsed.get("mime_type", mime_type)
-                            logger.info(f"[{session_id}:{speaker_id}] Received base64 audio chunk ({len(audio_bytes)} bytes decoded)")
+                            requested_lang = parsed.get("language", None)
+                            logger.info(f"[{session_id}:{speaker_id}] Received base64 audio chunk ({len(audio_bytes)} bytes decoded, lang={requested_lang})")
                         else:
                             logger.warning(f"[{session_id}:{speaker_id}] JSON message missing 'audio_base64' key: {list(parsed.keys())}")
                     except Exception as pe:
@@ -101,10 +103,11 @@ def create_websocket_router(
                     session=session,
                     speaker_id=speaker_id,
                     audio=chunk,
+                    language=requested_lang,
                 )
 
                 if turn:
-                    logger.info(f"[{session_id}:{speaker_id}] Turn '{turn.turn_id}' completed: STT='{turn.original_transcription.text}' -> MT='{turn.translation.translated_text}'")
+                    logger.info(f"[{session_id}:{turn.speaker_id}] Turn '{turn.turn_id}' completed: STT='{turn.original_transcription.text}' -> MT='{turn.translation.translated_text}'")
                     b64_audio = None
                     if turn.synthesis and turn.synthesis.audio_bytes:
                         b64_audio = base64.b64encode(turn.synthesis.audio_bytes).decode("utf-8")
@@ -112,6 +115,7 @@ def create_websocket_router(
                     payload = {
                         "type": "turn_result",
                         "turn_id": turn.turn_id,
+                        "speaker_id": turn.speaker_id,
                         "original_text": turn.original_transcription.text,
                         "translated_text": turn.translation.translated_text,
                     }

@@ -25,7 +25,7 @@ logger = logging.getLogger(__name__)
 class PipelineOrchestrator:
     """
     Coordinates the Speech-to-Speech Translation (S2ST) pipeline:
-    AudioChunk -> VAD -> STT -> MT -> TTS -> Broadcaster -> Storage
+    AudioChunk -> Diarization -> VAD -> STT -> MT -> TTS -> Broadcaster -> Storage
     """
 
     def __init__(
@@ -37,6 +37,7 @@ class PipelineOrchestrator:
         vad_engine: Optional[IVoiceActivityDetector] = None,
         storage_repo: Optional[IMeetingRepository] = None,
         live_notetaker: Optional[Any] = None,
+        diarizer: Optional[Any] = None,
     ) -> None:
         self.stt = stt_engine
         self.mt = translation_engine
@@ -45,13 +46,14 @@ class PipelineOrchestrator:
         self.vad = vad_engine
         self.storage = storage_repo
         self.live_notetaker = live_notetaker
-
+        self.diarizer = diarizer
 
     async def process_turn(
         self,
         session: Session,
         speaker_id: str,
         audio: AudioChunk,
+        language: Optional[str] = None,
     ) -> Optional[ConversationTurn]:
         """
         Executes a single conversational turn from audio input to translated speech.
@@ -65,17 +67,29 @@ class PipelineOrchestrator:
             logger.debug("VAD detected no speech in audio chunk.")
             return None
 
-        # Identify current speaker and counterpart flexibly
-        current_speaker = session.get_speaker(speaker_id)
-        if not current_speaker:
-            current_speaker = session.speaker_a
+        # 2. Acoustic Speaker Diarization for single-microphone scenarios
+        effective_speaker_id = speaker_id
+        if self.diarizer and speaker_id in ["local", "speaker_1", "speaker_2", ""]:
+            diar_id, diar_name, conf = self.diarizer.identify_speaker(
+                audio=audio,
+                session_id=session.session_id,
+                fallback_speaker_id=speaker_id,
+            )
+            if diar_id:
+                effective_speaker_id = diar_id
+                logger.info(f"[{session.session_id}] Acoustic Diarization resolved speaker: {effective_speaker_id} ({diar_name})")
 
-        counterpart = session.get_counterpart(speaker_id)
-        if not counterpart:
+        # Identify current speaker and counterpart flexibly
+        if effective_speaker_id in ["speaker_2", "remote"]:
+            current_speaker = session.speaker_b
+            counterpart = session.speaker_a
+        else:
+            current_speaker = session.speaker_a
             counterpart = session.speaker_b
 
-        # 2. Automatic Speech Recognition (STT with auto-detection of incoming language)
-        transcription = self.stt.transcribe(audio=audio, language=None)
+        # 3. Automatic Speech Recognition (with optional explicit language conditioning)
+        effective_lang = language if language not in [None, "auto", ""] else None
+        transcription = self.stt.transcribe(audio=audio, language=effective_lang)
         if not transcription or not transcription.text.strip():
             logger.debug(f"[{session.session_id}] No speech recognized or silence in audio chunk.")
             return None
@@ -89,14 +103,14 @@ class PipelineOrchestrator:
         else:
             target_lang = "en"
 
-        logger.info(f"[{session.session_id}] Transcribed ({source_lang}): '{transcription.text}'")
+        logger.info(f"[{session.session_id}] Transcribed ({source_lang}) for '{effective_speaker_id}': '{transcription.text}'")
 
         if self.broadcaster:
             await self.broadcaster.broadcast_event(
                 session.session_id,
                 TranscriptionCompletedEvent(
                     session_id=session.session_id,
-                    speaker_id=speaker_id,
+                    speaker_id=effective_speaker_id,
                     text=transcription.text,
                     language=source_lang,
                     confidence=transcription.confidence,
@@ -116,7 +130,7 @@ class PipelineOrchestrator:
                 session.session_id,
                 TranslationCompletedEvent(
                     session_id=session.session_id,
-                    speaker_id=speaker_id,
+                    speaker_id=effective_speaker_id,
                     source_text=translation.source_text,
                     translated_text=translation.translated_text,
                     source_lang=source_lang,
@@ -138,7 +152,7 @@ class PipelineOrchestrator:
                 session.session_id,
                 SynthesisCompletedEvent(
                     session_id=session.session_id,
-                    speaker_id=speaker_id,
+                    speaker_id=effective_speaker_id,
                     audio_bytes_length=len(synthesis.audio_bytes),
                     duration_seconds=synthesis.duration_seconds,
                     sample_rate=synthesis.sample_rate,
@@ -150,7 +164,7 @@ class PipelineOrchestrator:
         turn = ConversationTurn(
             turn_id=turn_id,
             session_id=session.session_id,
-            speaker_id=speaker_id,
+            speaker_id=effective_speaker_id,
             original_transcription=transcription,
             translation=translation,
             synthesis=synthesis,
@@ -170,7 +184,8 @@ class PipelineOrchestrator:
                 TurnCompletedEvent(
                     session_id=session.session_id,
                     turn_id=turn_id,
-                    speaker_id=speaker_id,
+                    speaker_id=effective_speaker_id,
+                    speaker_name=current_speaker.name,
                     original_text=transcription.text,
                     translated_text=translation.translated_text,
                     source_lang=source_lang,
