@@ -2,6 +2,7 @@ import base64
 import json
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from janus.adapters.stt.audio_transcoding import transcode_to_pcm16
 from janus.domain.models import AudioChunk
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
 from janus.services.pipeline_orchestrator import PipelineOrchestrator
@@ -72,6 +73,7 @@ def create_websocket_router(
             while True:
                 message = await websocket.receive()
                 audio_bytes = b""
+                mime_type = "audio/webm"
 
                 if "bytes" in message and message["bytes"]:
                     audio_bytes = message["bytes"]
@@ -81,6 +83,7 @@ def create_websocket_router(
                         parsed = json.loads(message["text"])
                         if "audio_base64" in parsed:
                             audio_bytes = base64.b64decode(parsed["audio_base64"])
+                            mime_type = parsed.get("mime_type", mime_type)
                             logger.info(f"[{session_id}:{speaker_id}] Received base64 audio chunk ({len(audio_bytes)} bytes decoded)")
                         else:
                             logger.warning(f"[{session_id}:{speaker_id}] JSON message missing 'audio_base64' key: {list(parsed.keys())}")
@@ -91,8 +94,9 @@ def create_websocket_router(
                     logger.warning(f"[{session_id}:{speaker_id}] Empty audio bytes received, skipping processing turn.")
                     continue
 
-                logger.info(f"[{session_id}:{speaker_id}] Dispatching AudioChunk ({len(audio_bytes)} bytes) to S2ST Pipeline Orchestrator...")
-                chunk = AudioChunk(data=audio_bytes, sample_rate=16000)
+                pcm16_bytes = transcode_to_pcm16(audio_bytes, format_hint=mime_type)
+                logger.info(f"[{session_id}:{speaker_id}] Transcoded audio ({len(audio_bytes)} bytes -> {len(pcm16_bytes)} pcm16 bytes). Dispatching to S2ST Pipeline Orchestrator...")
+                chunk = AudioChunk(data=pcm16_bytes, sample_rate=16000)
                 turn = await orchestrator.process_turn(
                     session=session,
                     speaker_id=speaker_id,

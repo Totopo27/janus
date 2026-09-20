@@ -95,7 +95,7 @@ def test_gemini_adapter_generate():
         mock_post.assert_called_once()
         args, kwargs = mock_post.call_args
         assert "generativelanguage.googleapis.com" in args[0]
-        assert "key=test_api_key" in args[0]
+        assert kwargs["headers"]["x-goog-api-key"] == "test_api_key"
 
 
 def test_gemini_adapter_chat_with_meeting():
