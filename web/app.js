@@ -53,7 +53,7 @@ const modalAiAskBtn = document.getElementById("modalAiAskBtn");
 const modalAiAnswerBox = document.getElementById("modalAiAnswerBox");
 const modalAiAnswerText = document.getElementById("modalAiAnswerText");
 
-// Zoom AI Companion Live Notetaker Elements
+// Janus Live Notetaker Elements
 const liveTopicText = document.getElementById("liveTopicText");
 const liveTakeawaysList = document.getElementById("liveTakeawaysList");
 const liveActionItemsList = document.getElementById("liveActionItemsList");
@@ -229,7 +229,7 @@ function handleIncomingEvent(payload) {
 }
 
 function renderTurnCard(turn) {
-  const placeholder = feed.querySelector("p");
+  const placeholder = feed.querySelector(".feed-empty-state") || feed.querySelector("p");
   if (placeholder) {
     feed.innerHTML = "";
   }
@@ -238,23 +238,24 @@ function renderTurnCard(turn) {
   const speakerClass = isSpeakerA ? "speaker-a" : "speaker-b";
   const speakerName = isSpeakerA ? "Carlos (ES)" : "Alice (EN)";
 
-  const card = document.createElement("div");
+  const card = document.createElement("article");
   card.className = `turn-card ${speakerClass}`;
+  card.setAttribute("aria-label", `Turno de ${speakerName}`);
 
   const timeStr = new Date().toLocaleTimeString();
-  const arrowSvg = `<svg class="translation-indicator" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
+  const arrowSvg = `<svg class="translation-indicator" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
 
   card.innerHTML = `
     <div class="turn-header">
       <span style="font-weight: 600;">${speakerName}</span>
-      <span>${timeStr}</span>
+      <time datetime="${new Date().toISOString()}">${timeStr}</time>
     </div>
-    <div class="turn-original">"${escapeHtml(turn.original_text)}"</div>
+    <div class="turn-original">“${escapeHtml(turn.original_text)}”</div>
     <div class="turn-translated">${arrowSvg} <span>${escapeHtml(turn.translated_text)}</span></div>
   `;
 
   feed.appendChild(card);
-  feed.scrollTop = feed.scrollHeight;
+  feed.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
 }
 
 function playSynthesizedAudio(base64Data, format) {
@@ -271,30 +272,36 @@ function escapeHtml(text) {
 
 // Active Speaker Selector (Carlos [ES] vs Alice [EN])
 let currentSpeakerId = "carlos";
-const chipSpeakerA = document.querySelector(".chip-speaker-a");
-const chipSpeakerB = document.querySelector(".chip-speaker-b");
+const chipSpeakerA = document.getElementById("chipSpeakerA") || document.querySelector(".chip-speaker-a");
+const chipSpeakerB = document.getElementById("chipSpeakerB") || document.querySelector(".chip-speaker-b");
 
 if (chipSpeakerA && chipSpeakerB) {
-  chipSpeakerA.style.cursor = "pointer";
-  chipSpeakerB.style.cursor = "pointer";
-  chipSpeakerA.style.border = "2px solid var(--accent-blue)";
-
   chipSpeakerA.addEventListener("click", () => {
     currentSpeakerId = "carlos";
-    chipSpeakerA.style.border = "2px solid var(--accent-blue)";
-    chipSpeakerB.style.border = "none";
+    chipSpeakerA.classList.add("active-speaker");
+    chipSpeakerB.classList.remove("active-speaker");
+    chipSpeakerA.setAttribute("aria-label", "Hablante Carlos en Español (Activo)");
+    chipSpeakerB.setAttribute("aria-label", "Hablante Alice en Inglés");
     if (recordText) {
       recordText.textContent = isLocalRecording ? "Detener Grabación (Carlos - ES)" : "Iniciar Grabación (Carlos - ES)";
+    }
+    if (recordBtn) {
+      recordBtn.setAttribute("aria-label", isLocalRecording ? "Detener grabación de audio (Carlos - ES)" : "Iniciar grabación de audio (Carlos - ES)");
     }
     console.log("[AudioRecorder] Hablante activo seleccionado: Carlos (ES)");
   });
 
   chipSpeakerB.addEventListener("click", () => {
     currentSpeakerId = "alice";
-    chipSpeakerB.style.border = "2px solid var(--accent-blue)";
-    chipSpeakerA.style.border = "none";
+    chipSpeakerB.classList.add("active-speaker");
+    chipSpeakerA.classList.remove("active-speaker");
+    chipSpeakerB.setAttribute("aria-label", "Hablante Alice en Inglés (Activo)");
+    chipSpeakerA.setAttribute("aria-label", "Hablante Carlos en Español");
     if (recordText) {
       recordText.textContent = isLocalRecording ? "Detener Grabación (Alice - EN)" : "Iniciar Grabación (Alice - EN)";
+    }
+    if (recordBtn) {
+      recordBtn.setAttribute("aria-label", isLocalRecording ? "Detener grabación de audio (Alice - EN)" : "Iniciar grabación de audio (Alice - EN)");
     }
     console.log("[AudioRecorder] Hablante activo seleccionado: Alice (EN)");
   });
@@ -414,7 +421,7 @@ if (scenarioInPerson && scenarioVideocall) {
   });
 }
 
-// 7. Dual-Channel Capture for Remote Videocalls (Zoom / Google Meet)
+// 7. Dual-Channel Capture for Remote Videocalls
 async function startMeetAudioCapture() {
   try {
     meetStream = await navigator.mediaDevices.getDisplayMedia({
@@ -509,17 +516,25 @@ if (connectMeetAudioBtn) {
   });
 }
 
-// 8. FTS5 Historical Search Modal Logic
+// 8. FTS5 Historical Search Modal Logic & Safe Snippet Sanitization
+function sanitizeFtsSnippet(rawSnippet) {
+  if (!rawSnippet) return "";
+  // Escapar HTML malicioso preservando únicamente los tags <mark> y </mark> de SQLite FTS5
+  const escaped = escapeHtml(rawSnippet);
+  return escaped.replace(/&lt;mark&gt;/g, "<mark>").replace(/&lt;\/mark&gt;/g, "</mark>");
+}
+
 if (openSearchBtn && searchModal) {
   openSearchBtn.addEventListener("click", () => {
     searchModal.style.display = "flex";
-    searchQueryInput.focus();
+    if (searchQueryInput) searchQueryInput.focus();
   });
 }
 
 if (closeSearchModalBtn && searchModal) {
   closeSearchModalBtn.addEventListener("click", () => {
     searchModal.style.display = "none";
+    if (openSearchBtn) openSearchBtn.focus();
   });
 }
 
@@ -528,7 +543,7 @@ async function performSearch() {
   const topic = searchTopicInput.value.trim();
   if (!q) return;
 
-  searchResultsList.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem;">Buscando en janus.db (SQLite FTS5)...</div>`;
+  searchResultsList.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem;">Buscando en janus.db (SQLite FTS5)…</div>`;
 
   try {
     let url = `/api/meetings/search?q=${encodeURIComponent(q)}`;
@@ -540,30 +555,30 @@ async function performSearch() {
     const results = await res.json();
 
     if (results.length === 0) {
-      searchResultsList.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem;">No se encontraron resultados para "${escapeHtml(q)}".</div>`;
+      searchResultsList.innerHTML = `<div style="text-align: center; color: var(--text-muted); padding: 2rem;">No se encontraron resultados para “${escapeHtml(q)}”.</div>`;
       return;
     }
 
     searchResultsList.innerHTML = "";
     results.forEach(r => {
-      const card = document.createElement("div");
+      const card = document.createElement("article");
       card.className = "search-hit-card";
-      const topicTag = r.topic_key ? `<span style="background: rgba(0, 242, 254, 0.1); color: var(--accent-cyan); padding: 2px 6px; border-radius: 4px;">${escapeHtml(r.topic_key)}</span>` : "";
+      const topicTag = r.topic_key ? `<span style="background: rgba(0, 210, 160, 0.12); color: var(--accent-telemetry); padding: 2px 6px; border-radius: 4px; font-family: var(--font-mono); font-size: 0.7rem;">${escapeHtml(r.topic_key)}</span>` : "";
       const dateStr = new Date(r.created_at * 1000).toLocaleString();
 
       card.innerHTML = `
-        <div class="search-hit-snippet">${r.snippet}</div>
+        <div class="search-hit-snippet">${sanitizeFtsSnippet(r.snippet)}</div>
         <div class="search-hit-meta">
           <span>Reunión: <strong>${escapeHtml(r.meeting_id)}</strong></span>
           <span>Hablante: ${escapeHtml(r.speaker_id)}</span>
-          <span>${dateStr}</span>
+          <time datetime="${new Date(r.created_at * 1000).toISOString()}">${dateStr}</time>
           ${topicTag}
         </div>
       `;
       searchResultsList.appendChild(card);
     });
   } catch (err) {
-    searchResultsList.innerHTML = `<div style="text-align: center; color: #ef4444; padding: 2rem;">Error: ${escapeHtml(err.message)}</div>`;
+    searchResultsList.innerHTML = `<div style="text-align: center; color: var(--accent-live); padding: 2rem;">Error: ${escapeHtml(err.message)}</div>`;
   }
 }
 
@@ -572,15 +587,25 @@ if (executeSearchBtn) {
 }
 if (searchQueryInput) {
   searchQueryInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") performSearch();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      performSearch();
+    }
+  });
+}
+const searchForm = document.getElementById("searchForm");
+if (searchForm) {
+  searchForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    performSearch();
   });
 }
 
-// 9. Finalize Meeting & Zoom-Style Meeting Notes with AI Q&A
+// 9. Finalize Meeting & Meeting Notes with AI Q&A
 if (finalizeBtn) {
   finalizeBtn.addEventListener("click", async () => {
     finalizeBtn.disabled = true;
-    finalizeBtn.innerHTML = `<span>Generando Minuta...</span>`;
+    finalizeBtn.innerHTML = `<span>Generando Minuta…</span>`;
 
     try {
       const res = await fetch(`/api/meetings/${SESSION_ID}/finalize`, { method: "POST" });
@@ -603,22 +628,20 @@ if (finalizeBtn) {
         modalActionItems.innerHTML = "";
         (summary.action_items || []).forEach(item => {
           const li = document.createElement("li");
-          li.style.display = "flex";
-          li.style.alignItems = "center";
-          li.style.gap = "0.6rem";
           const due = item.due_hint ? ` (Límite: ${item.due_hint})` : "";
-          li.innerHTML = `<input type="checkbox" ${item.completed ? "checked" : ""} /> <span><strong>${escapeHtml(item.assignee)}:</strong> ${escapeHtml(item.task)}${due}</span>`;
+          li.innerHTML = `<input type="checkbox" id="action_${Math.random().toString(36).substring(2, 7)}" ${item.completed ? "checked" : ""} aria-label="Estado de tarea: ${escapeHtml(item.task)}" /> <span><strong>${escapeHtml(item.assignee)}:</strong> ${escapeHtml(item.task)}${due}</span>`;
           modalActionItems.appendChild(li);
         });
 
         notesModal.style.display = "flex";
+        if (closeModalBtn) closeModalBtn.focus();
       }
     } catch (err) {
       alert("Error generando minuta: " + err.message);
     } finally {
       finalizeBtn.disabled = false;
       finalizeBtn.innerHTML = `
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>
         <span>Generar Minuta</span>
       `;
     }
@@ -628,6 +651,7 @@ if (finalizeBtn) {
 if (closeModalBtn) {
   closeModalBtn.addEventListener("click", () => {
     notesModal.style.display = "none";
+    if (finalizeBtn) finalizeBtn.focus();
   });
 }
 
@@ -644,12 +668,12 @@ if (copyNotesBtn) {
       const md = await res.text();
       await navigator.clipboard.writeText(md);
       copyNotesBtn.innerHTML = `
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polyline points="20 6 9 17 4 12"/></svg>
         <span>Copiado al Portapapeles</span>
       `;
       setTimeout(() => {
         copyNotesBtn.innerHTML = `
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
           <span>Copiar Minuta</span>
         `;
       }, 2000);
@@ -659,10 +683,23 @@ if (copyNotesBtn) {
   });
 }
 
-// 10. BYOM: AI Chat with Meeting
+// 10. BYOM: AI Chat with Meeting & Inference Badge Sync
+const byomEngineName = document.getElementById("byomEngineName");
+
+function updateByomBadge(provider) {
+  if (!byomEngineName) return;
+  if (provider === "gemini") {
+    byomEngineName.textContent = "Google Gemini (Cloud)";
+  } else {
+    byomEngineName.textContent = "Ollama Local (qwen2.5:3b)";
+  }
+}
+
 if (modalAiProvider) {
+  updateByomBadge(modalAiProvider.value);
   modalAiProvider.addEventListener("change", async () => {
     const provider = modalAiProvider.value;
+    updateByomBadge(provider);
     try {
       await fetch("/api/system/llm-config", {
         method: "POST",
@@ -680,9 +717,9 @@ async function askAiAboutMeeting() {
   if (!question) return;
 
   modalAiAskBtn.disabled = true;
-  modalAiAskBtn.textContent = "Pensando...";
+  modalAiAskBtn.textContent = "Pensando…";
   modalAiAnswerBox.style.display = "block";
-  modalAiAnswerText.textContent = "Consultando a la IA con el contexto de la reunión...";
+  modalAiAnswerText.textContent = "Consultando a la IA con el contexto de la reunión…";
 
   try {
     const res = await fetch(`/api/meetings/${SESSION_ID}/chat`, {
@@ -701,7 +738,7 @@ async function askAiAboutMeeting() {
   } finally {
     modalAiAskBtn.disabled = false;
     modalAiAskBtn.innerHTML = `
-      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+      <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
       <span>Consultar</span>
     `;
   }
@@ -712,11 +749,21 @@ if (modalAiAskBtn) {
 }
 if (modalAiQuestionInput) {
   modalAiQuestionInput.addEventListener("keydown", (e) => {
-    if (e.key === "Enter") askAiAboutMeeting();
+    if (e.key === "Enter") {
+      e.preventDefault();
+      askAiAboutMeeting();
+    }
+  });
+}
+const byomForm = document.getElementById("byomForm");
+if (byomForm) {
+  byomForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    askAiAboutMeeting();
   });
 }
 
-// 11. Zoom AI Companion Live Notes & Catch Me Up Controller
+// 11. Janus Live Notes & Catch Me Up Controller
 function renderLiveNotes(data) {
   if (!data) return;
   if (data.current_topic && liveTopicText) {
@@ -725,7 +772,7 @@ function renderLiveNotes(data) {
 
   if (data.key_takeaways && liveTakeawaysList) {
     if (data.key_takeaways.length === 0) {
-      liveTakeawaysList.innerHTML = `<li class="empty-hint">El asistente está escuchando activamente para sintetizar los acuerdos...</li>`;
+      liveTakeawaysList.innerHTML = `<li class="empty-hint">El asistente está escuchando activamente para sintetizar los acuerdos…</li>`;
     } else {
       liveTakeawaysList.innerHTML = "";
       data.key_takeaways.forEach(pt => {
@@ -744,7 +791,7 @@ function renderLiveNotes(data) {
       data.action_items.forEach(itm => {
         const li = document.createElement("li");
         const due = itm.due_hint ? ` (Plazo: ${escapeHtml(itm.due_hint)})` : "";
-        li.innerHTML = `<input type="checkbox" ${itm.completed ? "checked" : ""} /> <span><strong>${escapeHtml(itm.assignee)}:</strong> ${escapeHtml(itm.task)}${due}</span>`;
+        li.innerHTML = `<input type="checkbox" id="live_action_${Math.random().toString(36).substring(2, 7)}" ${itm.completed ? "checked" : ""} aria-label="Tarea para ${escapeHtml(itm.assignee)}: ${escapeHtml(itm.task)}" /> <span><strong>${escapeHtml(itm.assignee)}:</strong> ${escapeHtml(itm.task)}${due}</span>`;
         liveActionItemsList.appendChild(li);
       });
     }
@@ -766,9 +813,9 @@ async function loadInitialLiveNotes() {
 if (catchUpBtn) {
   catchUpBtn.addEventListener("click", async () => {
     catchUpBtn.disabled = true;
-    catchUpBtn.innerHTML = `<span>Sintetizando...</span>`;
+    catchUpBtn.innerHTML = `<span>Sintetizando…</span>`;
     catchUpBox.style.display = "block";
-    catchUpText.textContent = "El asistente Zoom AI Companion está revisando los últimos minutos de la conversación...";
+    catchUpText.textContent = "El asistente Janus está revisando los últimos minutos de la conversación…";
 
     try {
       const res = await fetch(`/api/meetings/${SESSION_ID}/catch-up`, {
@@ -784,7 +831,7 @@ if (catchUpBtn) {
     } finally {
       catchUpBtn.disabled = false;
       catchUpBtn.innerHTML = `
-        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         <span>Ponerse al Día</span>
       `;
     }
@@ -794,6 +841,7 @@ if (catchUpBtn) {
 if (closeCatchUpBtn) {
   closeCatchUpBtn.addEventListener("click", () => {
     catchUpBox.style.display = "none";
+    if (catchUpBtn) catchUpBtn.focus();
   });
 }
 
@@ -813,6 +861,35 @@ if (refreshLiveNotesBtn) {
     }
   });
 }
+
+// Global Keyboard Shortcuts (Escape to close modals/drawers) & Backdrop Click
+document.addEventListener("keydown", (e) => {
+  if (e.key === "Escape") {
+    if (searchModal && searchModal.style.display === "flex") {
+      searchModal.style.display = "none";
+      if (openSearchBtn) openSearchBtn.focus();
+    }
+    if (notesModal && notesModal.style.display === "flex") {
+      notesModal.style.display = "none";
+      if (finalizeBtn) finalizeBtn.focus();
+    }
+    if (catchUpBox && catchUpBox.style.display === "block") {
+      catchUpBox.style.display = "none";
+      if (catchUpBtn) catchUpBtn.focus();
+    }
+  }
+});
+
+// Click outside modal content to dismiss
+[searchModal, notesModal].forEach(modal => {
+  if (modal) {
+    modal.addEventListener("click", (e) => {
+      if (e.target === modal) {
+        modal.style.display = "none";
+      }
+    });
+  }
+});
 
 // Bootstrap
 window.addEventListener("DOMContentLoaded", async () => {
