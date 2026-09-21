@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import uuid
 from typing import Optional, Any
@@ -5,7 +6,11 @@ from janus.domain.models import (
     AudioChunk,
     ConversationTurn,
     Session,
+    TranscriptionResult,
+    TranslationResult,
+    SynthesisResult,
 )
+from janus.services.conversational_fusion_service import FusedTurn
 from janus.domain.events import (
     TranscriptionCompletedEvent,
     TranslationCompletedEvent,
@@ -39,6 +44,7 @@ class PipelineOrchestrator:
         live_notetaker: Optional[Any] = None,
         diarizer: Optional[Any] = None,
         segmenter: Optional[Any] = None,
+        fusion_service: Optional[Any] = None,
         enable_vad_slicing: bool = False,
     ) -> None:
         self.stt = stt_engine
@@ -50,6 +56,7 @@ class PipelineOrchestrator:
         self.live_notetaker = live_notetaker
         self.diarizer = diarizer
         self.segmenter = segmenter
+        self.fusion_service = fusion_service
         self.enable_vad_slicing = enable_vad_slicing
 
     async def process_turn(
@@ -154,90 +161,105 @@ class PipelineOrchestrator:
                 ),
             )
 
-        # 3. Machine Translation (MT)
-        translation = self.mt.translate(
-            text=transcription.text,
-            source_lang=source_lang,
-            target_lang=target_lang,
-        )
-        logger.info(f"[{session.session_id}] Translated ({target_lang}): '{translation.translated_text}'")
-
-        if self.broadcaster:
-            await self.broadcaster.broadcast_event(
-                session.session_id,
-                TranslationCompletedEvent(
-                    session_id=session.session_id,
-                    speaker_id=effective_speaker_id,
-                    source_text=translation.source_text,
-                    translated_text=translation.translated_text,
-                    source_lang=source_lang,
-                    target_lang=target_lang,
-                    latency_ms=translation.latency_ms,
-                ),
+        # 3. Conversational Fusion or Machine Translation
+        if self.fusion_service:
+            fused_turns = self.fusion_service.fuse_and_translate(
+                text=transcription.text,
+                primary_speaker_id=effective_speaker_id,
+                primary_speaker_name=effective_speaker_name,
+                counterpart_speaker_id=counterpart.speaker_id,
+                counterpart_speaker_name=counterpart.name,
+                source_lang=source_lang,
+                target_lang=target_lang,
             )
-
-        # 4. Text-to-Speech Synthesis (TTS)
-        synthesis = self.tts.synthesize(
-            text=translation.translated_text,
-            language=target_lang,
-            voice_style=counterpart.preferred_voice_style,
-        )
-        logger.info(f"[{session.session_id}] Synthesized TTS audio ({len(synthesis.audio_bytes)} bytes)")
-
-        if self.broadcaster:
-            await self.broadcaster.broadcast_event(
-                session.session_id,
-                SynthesisCompletedEvent(
-                    session_id=session.session_id,
-                    speaker_id=effective_speaker_id,
-                    audio_bytes_length=len(synthesis.audio_bytes),
-                    duration_seconds=synthesis.duration_seconds,
-                    sample_rate=synthesis.sample_rate,
-                ),
+        else:
+            translation = self.mt.translate(
+                text=transcription.text,
+                source_lang=source_lang,
+                target_lang=target_lang,
             )
-
-        # 5. Record Conversation Turn
-        turn_id = f"turn_{uuid.uuid4().hex[:8]}"
-        turn = ConversationTurn(
-            turn_id=turn_id,
-            session_id=session.session_id,
-            speaker_id=effective_speaker_id,
-            original_transcription=transcription,
-            translation=translation,
-            synthesis=synthesis,
-        )
-        session.add_turn(turn)
-
-        # 6. Auto-persist to SQLite if storage repository is configured
-        if self.storage:
-            try:
-                self.storage.save_turn(session.session_id, turn)
-            except Exception as e:
-                logger.warning(f"Failed to auto-persist turn to storage repository: {e}")
-
-        if self.broadcaster:
-            await self.broadcaster.broadcast_event(
-                session.session_id,
-                TurnCompletedEvent(
-                    session_id=session.session_id,
-                    turn_id=turn_id,
+            fused_turns = [
+                FusedTurn(
                     speaker_id=effective_speaker_id,
                     speaker_name=effective_speaker_name,
                     original_text=transcription.text,
                     translated_text=translation.translated_text,
                     source_lang=source_lang,
                     target_lang=target_lang,
-                ),
+                )
+            ]
+
+        last_turn = None
+        for idx, fused in enumerate(fused_turns):
+            fused_turn_id = f"turn_{uuid.uuid4().hex[:8]}"
+            fused_transcription = TranscriptionResult(
+                text=fused.original_text,
+                language=fused.source_lang,
+                confidence=transcription.confidence,
+            )
+            fused_translation = TranslationResult(
+                source_text=fused.original_text,
+                source_lang=fused.source_lang,
+                translated_text=fused.translated_text,
+                target_lang=fused.target_lang,
+                latency_ms=0.0,
             )
 
-        # 7. Notify Live Notetaker in background
-        if self.live_notetaker:
+            # 4. Text-to-Speech Synthesis (TTS)
+            synthesis = SynthesisResult(audio_bytes=b"", sample_rate=16000, duration_seconds=0.0, format="wav")
             try:
-                asyncio.get_running_loop().create_task(
-                    asyncio.to_thread(self.live_notetaker.process_turn, session.session_id, turn)
+                synthesis = self.tts.synthesize(
+                    text=fused.translated_text,
+                    language=fused.target_lang,
+                    voice_style=counterpart.preferred_voice_style,
                 )
-            except Exception as e:
-                logger.debug(f"Live notetaker background dispatch skipped: {e}")
+            except Exception as te:
+                logger.debug(f"TTS synthesis skipped: {te}")
 
-        return turn
+            # 5. Record Conversation Turn
+            turn = ConversationTurn(
+                turn_id=fused_turn_id,
+                session_id=session.session_id,
+                speaker_id=fused.speaker_id,
+                original_transcription=fused_transcription,
+                translation=fused_translation,
+                synthesis=synthesis,
+            )
+            session.add_turn(turn)
+
+            # 6. Auto-persist to SQLite
+            if self.storage:
+                try:
+                    self.storage.save_turn(session.session_id, turn)
+                except Exception as e:
+                    logger.warning(f"Failed to auto-persist turn to storage repository: {e}")
+
+            # Broadcast TurnCompletedEvent to Teleprompter in real time
+            if self.broadcaster:
+                await self.broadcaster.broadcast_event(
+                    session.session_id,
+                    TurnCompletedEvent(
+                        session_id=session.session_id,
+                        turn_id=fused_turn_id,
+                        speaker_id=fused.speaker_id,
+                        speaker_name=fused.speaker_name,
+                        original_text=fused.original_text,
+                        translated_text=fused.translated_text,
+                        source_lang=fused.source_lang,
+                        target_lang=fused.target_lang,
+                    ),
+                )
+
+            # 7. Notify Live Notetaker in background
+            if self.live_notetaker:
+                try:
+                    asyncio.get_running_loop().create_task(
+                        asyncio.to_thread(self.live_notetaker.process_turn, session.session_id, turn)
+                    )
+                except Exception as e:
+                    logger.debug(f"Live notetaker background dispatch skipped: {e}")
+
+            last_turn = turn
+
+        return last_turn
 

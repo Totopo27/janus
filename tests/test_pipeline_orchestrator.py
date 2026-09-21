@@ -91,3 +91,47 @@ def test_pipeline_orchestrator_skips_empty_audio():
         assert stt.transcribe_called_count == 0
 
     asyncio.run(run_test())
+
+
+def test_pipeline_orchestrator_multi_turn_fusion():
+    from unittest.mock import MagicMock
+    from janus.services.conversational_fusion_service import FusedTurn
+
+    async def run_test():
+        speaker_a = SpeakerProfile(speaker_id="speaker_1", name="Hablante 1", native_language="es")
+        speaker_b = SpeakerProfile(speaker_id="speaker_2", name="Hablante 2", native_language="es")
+        session = Session(session_id="sess_fused", speaker_a=speaker_a, speaker_b=speaker_b)
+
+        stt = MockSpeechRecognizer(predefined_text="¿Vives aquí? Sí, vivo aquí.", language="es")
+        mt = MockTranslator()
+        tts = MockSpeechSynthesizer()
+        broadcaster = WebSocketBroadcaster()
+
+        mock_fusion = MagicMock()
+        mock_fusion.fuse_and_translate.return_value = [
+            FusedTurn(speaker_id="speaker_1", speaker_name="Hablante 1", original_text="¿Vives aquí?", translated_text="Do you live here?"),
+            FusedTurn(speaker_id="speaker_2", speaker_name="Hablante 2", original_text="Sí, vivo aquí.", translated_text="Yes, I live here."),
+        ]
+
+        orchestrator = PipelineOrchestrator(
+            stt_engine=stt,
+            translation_engine=mt,
+            tts_engine=tts,
+            broadcaster=broadcaster,
+            fusion_service=mock_fusion,
+        )
+
+        audio_chunk = AudioChunk(data=b"\x00\x01" * 16000, sample_rate=16000)
+        last_turn = await orchestrator.process_turn(session, "speaker_1", audio_chunk)
+
+        assert last_turn is not None
+        assert last_turn.speaker_id == "speaker_2"
+        assert len(session.turns) == 2
+        assert session.turns[0].speaker_id == "speaker_1"
+        assert session.turns[0].original_transcription.text == "¿Vives aquí?"
+        assert session.turns[0].translation.translated_text == "Do you live here?"
+        assert session.turns[1].speaker_id == "speaker_2"
+        assert session.turns[1].original_transcription.text == "Sí, vivo aquí."
+        assert session.turns[1].translation.translated_text == "Yes, I live here."
+
+    asyncio.run(run_test())

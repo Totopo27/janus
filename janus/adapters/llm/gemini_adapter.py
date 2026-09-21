@@ -19,7 +19,7 @@ class GeminiAdapter(ILLMProvider):
         self,
         api_key: str,
         model: str = "gemini-3.5-flash",
-        timeout_seconds: float = 60.0,
+        timeout_seconds: float = 12.0,
     ) -> None:
         self.api_key = api_key
         self.model = model.replace("models/", "")

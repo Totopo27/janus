@@ -139,8 +139,8 @@ class LiveNotetakerService:
                             loop = asyncio.get_running_loop()
                             loop.create_task(coro)
                         except RuntimeError:
-                            # No running loop — broadcast_event was already called (sync path)
-                            pass
+                            # No running loop (e.g. sync test execution)
+                            coro.close()
                     except Exception as broadcast_err:
                         logger.warning("Live notes broadcast failed: %s", broadcast_err)
 

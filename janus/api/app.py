@@ -16,6 +16,7 @@ from janus.services.meeting_chat_service import MeetingChatService
 from janus.services.live_notetaker_service import LiveNotetakerService
 from janus.services.speaker_diarization_service import SpeakerDiarizationService
 from janus.services.vad_segmenter import SileroVadSegmenter
+from janus.services.conversational_fusion_service import ConversationalFusionService
 from janus.adapters.llm.factory import LLMProviderFactory
 from janus.adapters.storage.sqlite_repository import SqliteMeetingRepository
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
@@ -109,6 +110,7 @@ def create_app(
             diarizer = SpeakerDiarizationService()
         if segmenter is None:
             segmenter = SileroVadSegmenter()
+        fusion_service = ConversationalFusionService(llm_provider=llm_provider, fallback_translator=mt)
         orchestrator = PipelineOrchestrator(
             stt_engine=stt,
             translation_engine=mt,
@@ -118,6 +120,7 @@ def create_app(
             live_notetaker=live_notetaker,
             diarizer=diarizer,
             segmenter=segmenter,
+            fusion_service=fusion_service,
         )
 
     # Health check

@@ -156,8 +156,8 @@ class SpeakerDiarizationService:
                     return speaker_id, display_name, float(1.0 - similarity)
 
             # Case 3: Two or more speakers registered - find the best acoustic match
-            best_id = ""
-            best_score = -1.0
+            best_id = manager.all_speakers[0] if manager.all_speakers else fallback_speaker_id
+            best_score = -float("inf")
 
             for spk_id in manager.all_speakers:
                 score = manager.score(spk_id, embedding)
