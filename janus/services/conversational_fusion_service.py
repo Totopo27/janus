@@ -43,6 +43,7 @@ class ConversationalFusionService:
         counterpart_speaker_name: str = "Hablante 2",
         source_lang: str = "es",
         target_lang: str = "en",
+        acoustic_hint: Optional[str] = None,
     ) -> List[FusedTurn]:
         clean_text = text.strip()
         if not clean_text:
@@ -54,14 +55,15 @@ class ConversationalFusionService:
                     "Eres un asistente experto en transcripción y diarización conversacional para reuniones bilingües. "
                     "Analiza la siguiente transcripción de audio obtenida de un micrófono compartido.\n\n"
                     "Reglas estrictas:\n"
-                    f"1. Si el texto corresponde a un monólogo de una sola persona hablando de corrido, devuélvelo como UN SOLO turno asignado a '{primary_speaker_id}'.\n"
+                    f"1. Si el texto corresponde a un monólogo o la pista acústica confirma un solo hablante, devuélvelo como UN SOLO turno asignado a '{primary_speaker_id}'. No inventes hablantes.\n"
                     f"2. Si contiene un diálogo o intercambio conversacional (preguntas, respuestas, réplicas entre dos personas), desglósalo en los turnos respectivos alternando entre '{primary_speaker_id}' y '{counterpart_speaker_id}'.\n"
                     f"3. Traduce fielmente cada intervención de {source_lang.upper()} a {target_lang.upper()}.\n"
                     "4. Devuelve ÚNICAMENTE un JSON válido con la siguiente lista (sin bloques markdown de código ni texto explicativo):\n"
                     f'[{{"speaker": "{primary_speaker_id}", "original": "...", "translated": "..."}}]'
                 )
 
-                prompt = f"Transcripción de audio:\n\"{clean_text}\""
+                hint_text = f"\nPista acústica de sensores/diarización:\n{acoustic_hint}\n" if acoustic_hint else ""
+                prompt = f"Transcripción de audio:\n\"{clean_text}\"{hint_text}"
                 response = self.llm_provider.generate(prompt=prompt, system_prompt=system_instruction).strip()
 
                 # Clean markdown backticks if returned

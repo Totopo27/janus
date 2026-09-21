@@ -68,9 +68,23 @@ def download_models(target_dir: str = "assets/models"):
                 filename=campplus_file,
                 local_dir=diarization_dir,
             )
-        logger.info(f"Speaker Diarization model saved in: {diarization_dir}")
+        logger.info(f"Speaker Diarization embedding model saved in: {diarization_dir}")
+
+        pyannote_file = "pyannote_segmentation.onnx"
+        pyannote_target = os.path.join(diarization_dir, pyannote_file)
+        if not os.path.exists(pyannote_target):
+            logger.info("Downloading PyAnnote 3.0 segmentation ONNX model...")
+            hf_hub_download(
+                repo_id="csukuangfj/sherpa-onnx-pyannote-segmentation-3-0",
+                filename="model.onnx",
+                local_dir=diarization_dir,
+            )
+            downloaded_model = os.path.join(diarization_dir, "model.onnx")
+            if os.path.exists(downloaded_model):
+                os.replace(downloaded_model, pyannote_target)
+            logger.info(f"PyAnnote segmentation model saved as: {pyannote_target}")
     except Exception as e:
-        logger.warning(f"Could not download Speaker Diarization model automatically: {e}")
+        logger.warning(f"Could not download Speaker Diarization models automatically: {e}")
 
     # 4. Sherpa-ONNX Voice Activity Detection (Silero VAD)
     vad_dir = os.path.join(target_dir, "vad")

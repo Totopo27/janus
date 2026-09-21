@@ -53,8 +53,8 @@ class GeminiAdapter(ILLMProvider):
         }
 
     def _candidate_models(self) -> List[str]:
-        preferred = ["gemini-3.5-flash"]
-        fallbacks = ["gemini-3.8-flash", "gemini-3.6-flash"]
+        preferred = ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
+        fallbacks = ["gemini-flash-latest", "gemini-3.8-flash"]
         return list(dict.fromkeys(preferred + fallbacks))
 
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:

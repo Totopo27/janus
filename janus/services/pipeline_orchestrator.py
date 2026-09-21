@@ -109,16 +109,27 @@ class PipelineOrchestrator:
         # 2. Acoustic Speaker Diarization for single-microphone scenarios
         effective_speaker_id = speaker_id
         effective_speaker_name = None
-        if self.diarizer and speaker_id in ["local", "speaker_1", "speaker_2", ""]:
-            diar_id, diar_name, conf = self.diarizer.identify_speaker(
-                audio=audio,
-                session_id=session.session_id,
-                fallback_speaker_id=speaker_id,
-            )
-            if diar_id:
-                effective_speaker_id = diar_id
-                effective_speaker_name = diar_name
-                logger.info(f"[{session.session_id}] Acoustic Diarization resolved speaker: {effective_speaker_id} ({diar_name})")
+        acoustic_hint = None
+
+        if self.diarizer:
+            if hasattr(self.diarizer, "analyze_segments"):
+                try:
+                    report = self.diarizer.analyze_segments(audio)
+                    acoustic_hint = report.acoustic_hint
+                    logger.info(f"[{session.session_id}] PyAnnote Diarization: {report.num_speakers} speaker(s), monologue={report.is_monologue}")
+                except Exception as de:
+                    logger.debug(f"Segment analysis skipped: {de}")
+
+            if speaker_id in ["local", "speaker_1", "speaker_2", ""]:
+                diar_id, diar_name, conf = self.diarizer.identify_speaker(
+                    audio=audio,
+                    session_id=session.session_id,
+                    fallback_speaker_id=speaker_id,
+                )
+                if diar_id:
+                    effective_speaker_id = diar_id
+                    effective_speaker_name = diar_name
+                    logger.info(f"[{session.session_id}] Acoustic Diarization resolved speaker: {effective_speaker_id} ({diar_name})")
 
         # Identify current speaker and counterpart flexibly
         if effective_speaker_id in ["speaker_2", "remote"]:
@@ -171,6 +182,7 @@ class PipelineOrchestrator:
                 counterpart_speaker_name=counterpart.name,
                 source_lang=source_lang,
                 target_lang=target_lang,
+                acoustic_hint=acoustic_hint,
             )
         else:
             translation = self.mt.translate(
