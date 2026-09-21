@@ -72,6 +72,25 @@ def download_models(target_dir: str = "assets/models"):
     except Exception as e:
         logger.warning(f"Could not download Speaker Diarization model automatically: {e}")
 
+    # 4. Sherpa-ONNX Voice Activity Detection (Silero VAD)
+    vad_dir = os.path.join(target_dir, "vad")
+    os.makedirs(vad_dir, exist_ok=True)
+    logger.info("Downloading Silero VAD model...")
+    try:
+        from huggingface_hub import hf_hub_download
+        vad_file = "silero_vad.onnx"
+        target_path = os.path.join(vad_dir, vad_file)
+        if not os.path.exists(target_path):
+            logger.info(f"Downloading {vad_file}...")
+            hf_hub_download(
+                repo_id="csukuangfj/vad",
+                filename=vad_file,
+                local_dir=vad_dir,
+            )
+        logger.info(f"Silero VAD model saved in: {vad_dir}")
+    except Exception as e:
+        logger.warning(f"Could not download Silero VAD model automatically: {e}")
+
     logger.info("Model download process completed.")
 
 

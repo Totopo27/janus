@@ -38,6 +38,7 @@ class PipelineOrchestrator:
         storage_repo: Optional[IMeetingRepository] = None,
         live_notetaker: Optional[Any] = None,
         diarizer: Optional[Any] = None,
+        segmenter: Optional[Any] = None,
     ) -> None:
         self.stt = stt_engine
         self.mt = translation_engine
@@ -47,8 +48,37 @@ class PipelineOrchestrator:
         self.storage = storage_repo
         self.live_notetaker = live_notetaker
         self.diarizer = diarizer
+        self.segmenter = segmenter
 
     async def process_turn(
+        self,
+        session: Session,
+        speaker_id: str,
+        audio: AudioChunk,
+        language: Optional[str] = None,
+    ) -> Optional[ConversationTurn]:
+        """
+        Executes turn processing. If audio contains multiple distinct turns
+        separated by silence, slices them and processes each individually.
+        """
+        if audio.is_empty:
+            logger.debug("Received empty audio chunk, skipping turn.")
+            return None
+
+        if self.segmenter and audio.duration_seconds >= 2.0:
+            sub_chunks = self.segmenter.segment_audio(audio)
+            if len(sub_chunks) > 1:
+                logger.info(f"[{session.session_id}] Silero VAD sliced multi-speaker audio into {len(sub_chunks)} turns.")
+                last_turn = None
+                for sub in sub_chunks:
+                    turn = await self._process_single_turn(session, speaker_id, sub, language)
+                    if turn:
+                        last_turn = turn
+                return last_turn
+
+        return await self._process_single_turn(session, speaker_id, audio, language)
+
+    async def _process_single_turn(
         self,
         session: Session,
         speaker_id: str,
@@ -59,7 +89,6 @@ class PipelineOrchestrator:
         Executes a single conversational turn from audio input to translated speech.
         """
         if audio.is_empty:
-            logger.debug("Received empty audio chunk, skipping turn.")
             return None
 
         # 1. Voice Activity Detection (optional filter)
@@ -69,6 +98,7 @@ class PipelineOrchestrator:
 
         # 2. Acoustic Speaker Diarization for single-microphone scenarios
         effective_speaker_id = speaker_id
+        effective_speaker_name = None
         if self.diarizer and speaker_id in ["local", "speaker_1", "speaker_2", ""]:
             diar_id, diar_name, conf = self.diarizer.identify_speaker(
                 audio=audio,
@@ -77,6 +107,7 @@ class PipelineOrchestrator:
             )
             if diar_id:
                 effective_speaker_id = diar_id
+                effective_speaker_name = diar_name
                 logger.info(f"[{session.session_id}] Acoustic Diarization resolved speaker: {effective_speaker_id} ({diar_name})")
 
         # Identify current speaker and counterpart flexibly
@@ -86,6 +117,9 @@ class PipelineOrchestrator:
         else:
             current_speaker = session.speaker_a
             counterpart = session.speaker_b
+
+        if not effective_speaker_name:
+            effective_speaker_name = current_speaker.name
 
         # 3. Automatic Speech Recognition (with optional explicit language conditioning)
         effective_lang = language if language not in [None, "auto", ""] else None
@@ -185,7 +219,7 @@ class PipelineOrchestrator:
                     session_id=session.session_id,
                     turn_id=turn_id,
                     speaker_id=effective_speaker_id,
-                    speaker_name=current_speaker.name,
+                    speaker_name=effective_speaker_name,
                     original_text=transcription.text,
                     translated_text=translation.translated_text,
                     source_lang=source_lang,

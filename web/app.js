@@ -21,6 +21,11 @@ const audioPlaybackToggle = document.getElementById("audioPlaybackToggle");
 const clearFeedBtn = document.getElementById("clearFeedBtn");
 const finalizeBtn = document.getElementById("finalizeBtn");
 const inputLanguageSelect = document.getElementById("inputLanguageSelect");
+const vadTelemetryBar = document.getElementById("vadTelemetryBar");
+const vadStatusDot = document.getElementById("vadStatusDot");
+const vadStatusText = document.getElementById("vadStatusText");
+const vadVolumeBar = document.getElementById("vadVolumeBar");
+const vadBars = document.querySelectorAll(".vad-bar");
 
 // Scenario Elements
 const scenarioInPerson = document.getElementById("scenarioInPerson");
@@ -245,6 +250,10 @@ function renderTurnCard(turn) {
   } else if (turn.speaker_id === "speaker_1" || turn.speaker_id === "local") {
     speakerClass = "speaker-a";
     speakerLabel = turn.speaker_name || "Hablante 1";
+  } else {
+    const num = parseInt(String(turn.speaker_id).replace("speaker_", ""), 10);
+    speakerClass = (!isNaN(num) && num % 2 === 0) ? "speaker-b" : "speaker-a";
+    speakerLabel = turn.speaker_name || `Hablante ${num || 1}`;
   }
 
   const speakerHeader = `${speakerLabel} (${srcLang} → ${tgtLang})`;
@@ -285,79 +294,323 @@ function escapeHtml(text) {
 // Universal Audio Channel Selection
 let currentSpeakerId = "local";
 
-// 5. Microphone Recording (Toggle On/Off)
+// 5. Hands-Free Voice Activity Detection (VAD) & Continuous Recording
+let vadAudioContext = null;
+let vadAnalyser = null;
+let vadSource = null;
+let vadStream = null;
+let vadAnimationId = null;
+let vadCurrentRecorder = null;
+let vadCurrentChunks = [];
+let vadState = "IDLE"; // "IDLE" | "LISTENING" | "SPEAKING" | "DISPATCHING"
+let vadSpeechStartTime = 0;
+let vadLastSpeechTime = 0;
+
+const VAD_CONFIG = {
+  speechStartThreshold: 0.022,    // RMS to transition from LISTENING to SPEAKING
+  speechContinueThreshold: 0.015, // Hysteresis threshold to maintain SPEAKING
+  minSpeechDurationMs: 450,       // Minimum duration of voice for a valid turn
+  silencePauseMs: 800,            // Natural pause duration to trigger turn completion
+  maxTurnDurationMs: 14000,       // Max speech duration before forced turn slice
+};
+
+function getSupportedMimeType() {
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/mp4",
+  ];
+  for (const t of candidates) {
+    if (window.MediaRecorder && MediaRecorder.isTypeSupported(t)) {
+      return t;
+    }
+  }
+  return "";
+}
+
+function updateVadUI(state, rms = 0) {
+  if (!vadTelemetryBar) return;
+
+  vadTelemetryBar.classList.remove("listening", "speaking", "dispatching");
+
+  if (state === "IDLE") {
+    vadTelemetryBar.classList.add("hidden");
+    if (vadVolumeBar) vadVolumeBar.style.width = "0%";
+    if (vadBars) vadBars.forEach(b => b.style.height = "20%");
+  } else if (state === "LISTENING") {
+    vadTelemetryBar.classList.remove("hidden");
+    vadTelemetryBar.classList.add("listening");
+    if (vadStatusText) vadStatusText.textContent = "Escuchando... (Manos libres activo)";
+  } else if (state === "SPEAKING") {
+    vadTelemetryBar.classList.remove("hidden");
+    vadTelemetryBar.classList.add("speaking");
+    if (vadStatusText) vadStatusText.textContent = "Detectando voz...";
+  } else if (state === "DISPATCHING") {
+    vadTelemetryBar.classList.remove("hidden");
+    vadTelemetryBar.classList.add("dispatching");
+    if (vadStatusText) vadStatusText.textContent = "Procesando turno...";
+  }
+}
+
+function updateVadMeterUI(rms) {
+  if (!vadVolumeBar && (!vadBars || vadBars.length === 0)) return;
+
+  const pct = Math.min(100, Math.round((rms / 0.12) * 100));
+
+  if (vadVolumeBar) {
+    vadVolumeBar.style.width = `${pct}%`;
+  }
+
+  if (vadBars && vadBars.length > 0) {
+    const heights = [
+      Math.max(15, Math.min(100, pct * 0.7)),
+      Math.max(20, Math.min(100, pct * 1.1)),
+      Math.max(25, Math.min(100, pct * 1.4)),
+      Math.max(20, Math.min(100, pct * 1.0)),
+      Math.max(15, Math.min(100, pct * 0.6)),
+    ];
+    vadBars.forEach((bar, idx) => {
+      bar.style.height = `${heights[idx]}%`;
+    });
+  }
+}
+
+function startNewRecorderSlice() {
+  if (!vadStream || !vadStream.active) return;
+
+  const mimeType = getSupportedMimeType();
+  vadCurrentChunks = [];
+  const options = mimeType ? { mimeType } : {};
+  vadCurrentRecorder = new MediaRecorder(vadStream, options);
+
+  vadCurrentRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) {
+      vadCurrentChunks.push(e.data);
+    }
+  };
+
+  vadCurrentRecorder.start(250);
+}
+
+function sliceAndDispatchTurn() {
+  if (!vadCurrentRecorder || vadCurrentRecorder.state !== "recording") {
+    return;
+  }
+
+  const completedRecorder = vadCurrentRecorder;
+  const completedChunks = vadCurrentChunks;
+
+  // Immediately start the next recorder slice on the open stream so no voice frames are dropped!
+  startNewRecorderSlice();
+
+  completedRecorder.ondataavailable = (e) => {
+    if (e.data && e.data.size > 0) {
+      completedChunks.push(e.data);
+    }
+  };
+
+  completedRecorder.onstop = async () => {
+    if (completedChunks.length === 0) return;
+    const blob = new Blob(completedChunks, { type: completedRecorder.mimeType || "audio/webm" });
+    if (blob.size < 800) {
+      console.log(`[HandsFreeVAD] Fragmento muy corto descartado (${blob.size} bytes)`);
+      return;
+    }
+    await sendAudioBlobToServer(blob, completedRecorder.mimeType || "audio/webm");
+  };
+
+  completedRecorder.stop();
+}
+
+async function sendAudioBlobToServer(blob, mimeType) {
+  try {
+    if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
+      console.warn("[HandsFreeVAD] WebSocket no conectado, reconectando...");
+      connectLocalMicStream();
+      await new Promise(r => setTimeout(r, 250));
+    }
+
+    const arrayBuffer = await blob.arrayBuffer();
+    const bytes = new Uint8Array(arrayBuffer);
+    let binary = "";
+    const chunkSize = 8192;
+    for (let i = 0; i < bytes.length; i += chunkSize) {
+      binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+    }
+    const base64Audio = btoa(binary);
+    const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "es";
+
+    console.log(`[HandsFreeVAD] Despachando turno (${blob.size} bytes, lang=${selectedLang})...`);
+    localMicSocket.send(JSON.stringify({
+      audio_base64: base64Audio,
+      mime_type: mimeType,
+      language: selectedLang,
+    }));
+  } catch (err) {
+    console.error("[HandsFreeVAD] Error enviando audio al servidor:", err);
+  }
+}
+
+function runVadLoop() {
+  if (!isLocalRecording || !vadAnalyser) return;
+
+  const bufferLength = vadAnalyser.fftSize;
+  const dataArray = new Float32Array(bufferLength);
+
+  const loop = () => {
+    if (!isLocalRecording || !vadAnalyser) return;
+
+    vadAnalyser.getFloatTimeDomainData(dataArray);
+
+    let sumSquares = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sumSquares += dataArray[i] * dataArray[i];
+    }
+    const rms = Math.sqrt(sumSquares / bufferLength);
+    const now = Date.now();
+
+    updateVadMeterUI(rms);
+
+    if (vadState === "LISTENING") {
+      if (rms >= VAD_CONFIG.speechStartThreshold) {
+        vadState = "SPEAKING";
+        vadSpeechStartTime = now;
+        vadLastSpeechTime = now;
+        updateVadUI("SPEAKING", rms);
+      }
+    } else if (vadState === "SPEAKING") {
+      if (rms >= VAD_CONFIG.speechContinueThreshold) {
+        vadLastSpeechTime = now;
+      }
+
+      const silenceDuration = now - vadLastSpeechTime;
+      const speechDuration = vadLastSpeechTime - vadSpeechStartTime;
+      const totalTurnDuration = now - vadSpeechStartTime;
+
+      // Natural pause detected after speech
+      if (silenceDuration >= VAD_CONFIG.silencePauseMs) {
+        if (speechDuration >= VAD_CONFIG.minSpeechDurationMs) {
+          console.log(`[HandsFreeVAD] Pausa detectada (${silenceDuration}ms). Turno completado (${speechDuration}ms).`);
+          updateVadUI("DISPATCHING", 0);
+          sliceAndDispatchTurn();
+        } else {
+          console.log(`[HandsFreeVAD] Descartado ruido breve (${speechDuration}ms).`);
+        }
+        vadState = "LISTENING";
+        setTimeout(() => {
+          if (isLocalRecording && vadState === "LISTENING") {
+            updateVadUI("LISTENING", 0);
+          }
+        }, 500);
+      } else if (totalTurnDuration >= VAD_CONFIG.maxTurnDurationMs) {
+        console.log(`[HandsFreeVAD] Límite de duración continua alcanzado (${totalTurnDuration}ms). Despachando turno.`);
+        updateVadUI("DISPATCHING", 0);
+        sliceAndDispatchTurn();
+        vadSpeechStartTime = now;
+        vadLastSpeechTime = now;
+      }
+    }
+
+    vadAnimationId = requestAnimationFrame(loop);
+  };
+
+  vadAnimationId = requestAnimationFrame(loop);
+}
+
 async function startLocalRecording() {
   try {
     if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
-      console.warn("[AudioRecorder] Socket de audio local no está conectado. Reintentando...");
+      console.warn("[HandsFreeVAD] Socket de audio local desconectado. Conectando...");
       connectLocalMicStream();
     }
 
-    console.log("[AudioRecorder] Solicitando acceso al micrófono...");
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-    localAudioChunks = [];
-    localMicRecorder = new MediaRecorder(stream);
-
-    localMicRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0) {
-        localAudioChunks.push(e.data);
-        console.log(`[AudioRecorder] Bloque de audio grabado: ${e.data.size} bytes`);
+    console.log("[HandsFreeVAD] Solicitando acceso al micrófono...");
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
       }
-    };
+    });
 
-    localMicRecorder.onstop = async () => {
-      const audioBlob = new Blob(localAudioChunks, { type: "audio/webm" });
-      console.log(`[AudioRecorder] Grabación detenida. Total bloques: ${localAudioChunks.length}, tamaño blob: ${audioBlob.size} bytes`);
+    vadStream = stream;
+    vadAudioContext = new (window.AudioContext || window.webkitAudioContext)();
+    vadSource = vadAudioContext.createMediaStreamSource(stream);
+    vadAnalyser = vadAudioContext.createAnalyser();
+    vadAnalyser.fftSize = 512;
+    vadAnalyser.smoothingTimeConstant = 0.3;
+    vadSource.connect(vadAnalyser);
 
-      if (audioBlob.size === 0) {
-        console.warn("[AudioRecorder] El blob de audio resultó vacío (0 bytes). Se omite el envío.");
-        stream.getTracks().forEach(track => track.stop());
-        return;
-      }
-
-      const arrayBuffer = await audioBlob.arrayBuffer();
-      const base64Audio = btoa(
-        new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-      );
-
-      const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "es";
-      console.log(`[AudioRecorder] Enviando audio base64 (${base64Audio.length} caracteres, idioma: ${selectedLang}) al servidor...`);
-
-      if (localMicSocket && localMicSocket.readyState === WebSocket.OPEN) {
-        localMicSocket.send(JSON.stringify({
-          audio_base64: base64Audio,
-          mime_type: localMicRecorder.mimeType || "audio/webm",
-          language: selectedLang,
-        }));
-        console.log(`[AudioRecorder] Audio enviado exitosamente por WebSocket (idioma: ${selectedLang})`);
-      } else {
-        console.error("[AudioRecorder] No se pudo enviar el audio: WebSocket cerrado o no listo");
-      }
-
-      stream.getTracks().forEach(track => track.stop());
-    };
-
-    localMicRecorder.start();
     isLocalRecording = true;
+    vadState = "LISTENING";
     recordBtn.classList.add("recording");
     if (recordText) recordText.textContent = "Detener Grabación";
-    recordBtn.setAttribute("aria-label", "Detener grabación de audio");
-    console.log("[AudioRecorder] Grabación iniciada en modo Universal");
+    recordBtn.setAttribute("aria-label", "Detener captura de audio");
+
+    updateVadUI("LISTENING", 0);
+    startNewRecorderSlice();
+    runVadLoop();
+
+    console.log("[HandsFreeVAD] Captura manos libres iniciada exitosamente.");
   } catch (err) {
-    console.error("[AudioRecorder] Error accediendo al micrófono:", err);
+    console.error("[HandsFreeVAD] Error accediendo al micrófono:", err);
     alert("No se pudo acceder al micrófono: " + err.message);
   }
 }
 
 function stopLocalRecording() {
-  if (localMicRecorder && isLocalRecording) {
-    console.log("[AudioRecorder] Deteniendo grabación...");
-    localMicRecorder.stop();
-    isLocalRecording = false;
-    recordBtn.classList.remove("recording");
-    if (recordText) recordText.textContent = "Iniciar Grabación";
-    recordBtn.setAttribute("aria-label", "Iniciar grabación de audio");
+  if (!isLocalRecording) return;
+  console.log("[HandsFreeVAD] Deteniendo grabación...");
+  isLocalRecording = false;
+
+  if (vadAnimationId) {
+    cancelAnimationFrame(vadAnimationId);
+    vadAnimationId = null;
   }
+
+  // If there was ongoing speech when stopped, dispatch it
+  const now = Date.now();
+  if (vadState === "SPEAKING" && (now - vadSpeechStartTime >= VAD_CONFIG.minSpeechDurationMs)) {
+    if (vadCurrentRecorder && vadCurrentRecorder.state === "recording") {
+      const finalRecorder = vadCurrentRecorder;
+      const finalChunks = vadCurrentChunks;
+      finalRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) finalChunks.push(e.data);
+      };
+      finalRecorder.onstop = async () => {
+        if (finalChunks.length > 0) {
+          const blob = new Blob(finalChunks, { type: finalRecorder.mimeType || "audio/webm" });
+          if (blob.size >= 800) {
+            await sendAudioBlobToServer(blob, finalRecorder.mimeType || "audio/webm");
+          }
+        }
+      };
+      finalRecorder.stop();
+    }
+  } else if (vadCurrentRecorder && vadCurrentRecorder.state === "recording") {
+    vadCurrentRecorder.stop();
+  }
+
+  vadState = "IDLE";
+  vadCurrentRecorder = null;
+  vadCurrentChunks = [];
+
+  if (vadStream) {
+    vadStream.getTracks().forEach((track) => track.stop());
+    vadStream = null;
+  }
+
+  if (vadAudioContext && vadAudioContext.state !== "closed") {
+    vadAudioContext.close().catch(() => {});
+    vadAudioContext = null;
+  }
+
+  recordBtn.classList.remove("recording");
+  if (recordText) recordText.textContent = "Iniciar Grabación (Manos Libres)";
+  recordBtn.setAttribute("aria-label", "Iniciar grabación de audio");
+  updateVadUI("IDLE", 0);
+  console.log("[HandsFreeVAD] Captura detenida y recursos liberados.");
 }
 
 // Toggle recording on button click

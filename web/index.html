@@ -148,8 +148,26 @@
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
               </svg>
             </span>
-            <span id="recordText" class="record-label">Iniciar Grabación</span>
+            <span id="recordText" class="record-label">Iniciar Grabación (Manos Libres)</span>
           </button>
+
+          <!-- Live Hands-Free VAD Telemetry Dock -->
+          <div id="vadTelemetryBar" class="vad-telemetry-bar hidden" aria-live="polite">
+            <div class="vad-meter-container" title="Nivel de audio en tiempo real">
+              <span class="vad-bar bar-1"></span>
+              <span class="vad-bar bar-2"></span>
+              <span class="vad-bar bar-3"></span>
+              <span class="vad-bar bar-4"></span>
+              <span class="vad-bar bar-5"></span>
+            </div>
+            <div class="vad-status-indicator">
+              <span class="vad-status-dot" id="vadStatusDot"></span>
+              <span class="vad-status-text" id="vadStatusText">Escuchando...</span>
+            </div>
+            <div class="vad-volume-track" title="Energía vocal detectada">
+              <div class="vad-volume-bar" id="vadVolumeBar"></div>
+            </div>
+          </div>
         </div>
       </section>
 

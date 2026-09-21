@@ -12,6 +12,7 @@ from janus.services.meeting_notes_service import MeetingNotesService
 from janus.services.meeting_chat_service import MeetingChatService
 from janus.services.live_notetaker_service import LiveNotetakerService
 from janus.services.speaker_diarization_service import SpeakerDiarizationService
+from janus.services.vad_segmenter import SileroVadSegmenter
 from janus.adapters.llm.factory import LLMProviderFactory
 from janus.adapters.storage.sqlite_repository import SqliteMeetingRepository
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
@@ -32,6 +33,7 @@ def create_app(
     live_notetaker: Optional[LiveNotetakerService] = None,
     llm_provider: Optional[ILLMProvider] = None,
     diarizer: Optional[SpeakerDiarizationService] = None,
+    segmenter: Optional[SileroVadSegmenter] = None,
     db_path: str = "janus.db",
 ) -> FastAPI:
     """Factory creating and configuring the Janus FastAPI application."""
@@ -97,6 +99,8 @@ def create_app(
         tts = SupertonicTtsAdapter()
         if diarizer is None:
             diarizer = SpeakerDiarizationService()
+        if segmenter is None:
+            segmenter = SileroVadSegmenter()
         orchestrator = PipelineOrchestrator(
             stt_engine=stt,
             translation_engine=mt,
@@ -105,6 +109,7 @@ def create_app(
             storage_repo=meeting_repo,
             live_notetaker=live_notetaker,
             diarizer=diarizer,
+            segmenter=segmenter,
         )
 
     # Health check
