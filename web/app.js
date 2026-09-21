@@ -17,6 +17,7 @@ const statusText = document.getElementById("statusText");
 const feed = document.getElementById("feed");
 const recordBtn = document.getElementById("recordBtn");
 const recordText = document.getElementById("recordText");
+const vadModeToggle = document.getElementById("vadModeToggle");
 const audioPlaybackToggle = document.getElementById("audioPlaybackToggle");
 const clearFeedBtn = document.getElementById("clearFeedBtn");
 const finalizeBtn = document.getElementById("finalizeBtn");
@@ -294,7 +295,7 @@ function escapeHtml(text) {
 // Universal Audio Channel Selection
 let currentSpeakerId = "local";
 
-// 5. Hands-Free Voice Activity Detection (VAD) & Continuous Recording
+// 5. Dual-Mode Recording Architecture: Manual Studio Mode vs Hands-Free VAD Mode
 let vadAudioContext = null;
 let vadAnalyser = null;
 let vadSource = null;
@@ -302,16 +303,16 @@ let vadStream = null;
 let vadAnimationId = null;
 let vadCurrentRecorder = null;
 let vadCurrentChunks = [];
-let vadState = "IDLE"; // "IDLE" | "LISTENING" | "SPEAKING" | "DISPATCHING"
+let vadState = "IDLE"; // "IDLE" | "RECORDING_MANUAL" | "LISTENING" | "SPEAKING" | "DISPATCHING"
 let vadSpeechStartTime = 0;
 let vadLastSpeechTime = 0;
 
 const VAD_CONFIG = {
   speechStartThreshold: 0.022,    // RMS to transition from LISTENING to SPEAKING
   speechContinueThreshold: 0.015, // Hysteresis threshold to maintain SPEAKING
-  minSpeechDurationMs: 450,       // Minimum duration of voice for a valid turn
-  silencePauseMs: 800,            // Natural pause duration to trigger turn completion
-  maxTurnDurationMs: 14000,       // Max speech duration before forced turn slice
+  minSpeechDurationMs: 600,       // Minimum duration of voice for a valid turn (avoids throat clears/clicks)
+  silencePauseMs: 1400,           // 1.4s natural pause before completing turn (prevents mid-sentence cuts)
+  maxTurnDurationMs: 16000,       // Max speech duration before forced turn slice
 };
 
 function getSupportedMimeType() {
@@ -338,6 +339,10 @@ function updateVadUI(state, rms = 0) {
     vadTelemetryBar.classList.add("hidden");
     if (vadVolumeBar) vadVolumeBar.style.width = "0%";
     if (vadBars) vadBars.forEach(b => b.style.height = "20%");
+  } else if (state === "RECORDING_MANUAL") {
+    vadTelemetryBar.classList.remove("hidden");
+    vadTelemetryBar.classList.add("speaking");
+    if (vadStatusText) vadStatusText.textContent = "Grabando turno... (Presioná 'Detener' al finalizar)";
   } else if (state === "LISTENING") {
     vadTelemetryBar.classList.remove("hidden");
     vadTelemetryBar.classList.add("listening");
@@ -349,7 +354,7 @@ function updateVadUI(state, rms = 0) {
   } else if (state === "DISPATCHING") {
     vadTelemetryBar.classList.remove("hidden");
     vadTelemetryBar.classList.add("dispatching");
-    if (vadStatusText) vadStatusText.textContent = "Procesando turno...";
+    if (vadStatusText) vadStatusText.textContent = "Procesando turno con Whisper Small...";
   }
 }
 
@@ -401,7 +406,7 @@ function sliceAndDispatchTurn() {
   const completedRecorder = vadCurrentRecorder;
   const completedChunks = vadCurrentChunks;
 
-  // Immediately start the next recorder slice on the open stream so no voice frames are dropped!
+  // Immediately start next slice so no voice frames are lost
   startNewRecorderSlice();
 
   completedRecorder.ondataavailable = (e) => {
@@ -426,7 +431,7 @@ function sliceAndDispatchTurn() {
 async function sendAudioBlobToServer(blob, mimeType) {
   try {
     if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
-      console.warn("[HandsFreeVAD] WebSocket no conectado, reconectando...");
+      console.warn("[AudioCapture] WebSocket no conectado, reconectando...");
       connectLocalMicStream();
       await new Promise(r => setTimeout(r, 250));
     }
@@ -441,14 +446,14 @@ async function sendAudioBlobToServer(blob, mimeType) {
     const base64Audio = btoa(binary);
     const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "es";
 
-    console.log(`[HandsFreeVAD] Despachando turno (${blob.size} bytes, lang=${selectedLang})...`);
+    console.log(`[AudioCapture] Despachando turno (${blob.size} bytes, lang=${selectedLang})...`);
     localMicSocket.send(JSON.stringify({
       audio_base64: base64Audio,
       mime_type: mimeType,
       language: selectedLang,
     }));
   } catch (err) {
-    console.error("[HandsFreeVAD] Error enviando audio al servidor:", err);
+    console.error("[AudioCapture] Error enviando audio al servidor:", err);
   }
 }
 
@@ -488,7 +493,7 @@ function runVadLoop() {
       const speechDuration = vadLastSpeechTime - vadSpeechStartTime;
       const totalTurnDuration = now - vadSpeechStartTime;
 
-      // Natural pause detected after speech
+      // Natural pause detected after speech (1.4s threshold)
       if (silenceDuration >= VAD_CONFIG.silencePauseMs) {
         if (speechDuration >= VAD_CONFIG.minSpeechDurationMs) {
           console.log(`[HandsFreeVAD] Pausa detectada (${silenceDuration}ms). Turno completado (${speechDuration}ms).`);
@@ -518,14 +523,39 @@ function runVadLoop() {
   vadAnimationId = requestAnimationFrame(loop);
 }
 
+function runManualMeterLoop() {
+  if (!isLocalRecording || !vadAnalyser) return;
+
+  const bufferLength = vadAnalyser.fftSize;
+  const dataArray = new Float32Array(bufferLength);
+
+  const loop = () => {
+    if (!isLocalRecording || !vadAnalyser) return;
+
+    vadAnalyser.getFloatTimeDomainData(dataArray);
+
+    let sumSquares = 0;
+    for (let i = 0; i < bufferLength; i++) {
+      sumSquares += dataArray[i] * dataArray[i];
+    }
+    const rms = Math.sqrt(sumSquares / bufferLength);
+
+    updateVadMeterUI(rms);
+
+    vadAnimationId = requestAnimationFrame(loop);
+  };
+
+  vadAnimationId = requestAnimationFrame(loop);
+}
+
 async function startLocalRecording() {
   try {
     if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
-      console.warn("[HandsFreeVAD] Socket de audio local desconectado. Conectando...");
+      console.warn("[AudioCapture] Socket de audio local desconectado. Conectando...");
       connectLocalMicStream();
     }
 
-    console.log("[HandsFreeVAD] Solicitando acceso al micrófono...");
+    console.log("[AudioCapture] Solicitando acceso al micrófono...");
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
@@ -543,25 +573,43 @@ async function startLocalRecording() {
     vadSource.connect(vadAnalyser);
 
     isLocalRecording = true;
-    vadState = "LISTENING";
     recordBtn.classList.add("recording");
     if (recordText) recordText.textContent = "Detener Grabación";
     recordBtn.setAttribute("aria-label", "Detener captura de audio");
 
-    updateVadUI("LISTENING", 0);
-    startNewRecorderSlice();
-    runVadLoop();
+    const isHandsFree = vadModeToggle && vadModeToggle.checked;
 
-    console.log("[HandsFreeVAD] Captura manos libres iniciada exitosamente.");
+    if (isHandsFree) {
+      vadState = "LISTENING";
+      updateVadUI("LISTENING", 0);
+      startNewRecorderSlice();
+      runVadLoop();
+      console.log("[AudioCapture] Captura Manos Libres (VAD automático) iniciada.");
+    } else {
+      vadState = "RECORDING_MANUAL";
+      updateVadUI("RECORDING_MANUAL", 0);
+      const mimeType = getSupportedMimeType();
+      vadCurrentChunks = [];
+      const options = mimeType ? { mimeType } : {};
+      vadCurrentRecorder = new MediaRecorder(vadStream, options);
+      vadCurrentRecorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          vadCurrentChunks.push(e.data);
+        }
+      };
+      vadCurrentRecorder.start(250);
+      runManualMeterLoop();
+      console.log("[AudioCapture] Grabación Manual de Turno iniciada (sin cortes automáticos).");
+    }
   } catch (err) {
-    console.error("[HandsFreeVAD] Error accediendo al micrófono:", err);
+    console.error("[AudioCapture] Error accediendo al micrófono:", err);
     alert("No se pudo acceder al micrófono: " + err.message);
   }
 }
 
 function stopLocalRecording() {
   if (!isLocalRecording) return;
-  console.log("[HandsFreeVAD] Deteniendo grabación...");
+  console.log("[AudioCapture] Deteniendo grabación...");
   isLocalRecording = false;
 
   if (vadAnimationId) {
@@ -569,10 +617,35 @@ function stopLocalRecording() {
     vadAnimationId = null;
   }
 
-  // If there was ongoing speech when stopped, dispatch it
+  const isHandsFree = vadModeToggle && vadModeToggle.checked;
   const now = Date.now();
-  if (vadState === "SPEAKING" && (now - vadSpeechStartTime >= VAD_CONFIG.minSpeechDurationMs)) {
+
+  if (isHandsFree) {
+    // If there was ongoing speech when stopped, dispatch it
+    if (vadState === "SPEAKING" && (now - vadSpeechStartTime >= VAD_CONFIG.minSpeechDurationMs)) {
+      if (vadCurrentRecorder && vadCurrentRecorder.state === "recording") {
+        const finalRecorder = vadCurrentRecorder;
+        const finalChunks = vadCurrentChunks;
+        finalRecorder.ondataavailable = (e) => {
+          if (e.data && e.data.size > 0) finalChunks.push(e.data);
+        };
+        finalRecorder.onstop = async () => {
+          if (finalChunks.length > 0) {
+            const blob = new Blob(finalChunks, { type: finalRecorder.mimeType || "audio/webm" });
+            if (blob.size >= 800) {
+              await sendAudioBlobToServer(blob, finalRecorder.mimeType || "audio/webm");
+            }
+          }
+        };
+        finalRecorder.stop();
+      }
+    } else if (vadCurrentRecorder && vadCurrentRecorder.state === "recording") {
+      vadCurrentRecorder.stop();
+    }
+  } else {
+    // Manual Mode: Dispatch the complete, uninterrupted audio turn
     if (vadCurrentRecorder && vadCurrentRecorder.state === "recording") {
+      updateVadUI("DISPATCHING", 0);
       const finalRecorder = vadCurrentRecorder;
       const finalChunks = vadCurrentChunks;
       finalRecorder.ondataavailable = (e) => {
@@ -588,8 +661,6 @@ function stopLocalRecording() {
       };
       finalRecorder.stop();
     }
-  } else if (vadCurrentRecorder && vadCurrentRecorder.state === "recording") {
-    vadCurrentRecorder.stop();
   }
 
   vadState = "IDLE";
@@ -607,10 +678,12 @@ function stopLocalRecording() {
   }
 
   recordBtn.classList.remove("recording");
-  if (recordText) recordText.textContent = "Iniciar Grabación (Manos Libres)";
+  if (recordText) {
+    recordText.textContent = isHandsFree ? "Iniciar Grabación (Manos Libres)" : "Grabar Turno (Manual)";
+  }
   recordBtn.setAttribute("aria-label", "Iniciar grabación de audio");
   updateVadUI("IDLE", 0);
-  console.log("[HandsFreeVAD] Captura detenida y recursos liberados.");
+  console.log("[AudioCapture] Captura detenida y recursos liberados.");
 }
 
 // Toggle recording on button click
@@ -620,6 +693,15 @@ if (recordBtn) {
       stopLocalRecording();
     } else {
       startLocalRecording();
+    }
+  });
+}
+
+// Handle VAD mode checkbox change
+if (vadModeToggle) {
+  vadModeToggle.addEventListener("change", () => {
+    if (!isLocalRecording && recordText) {
+      recordText.textContent = vadModeToggle.checked ? "Iniciar Grabación (Manos Libres)" : "Grabar Turno (Manual)";
     }
   });
 }

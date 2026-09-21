@@ -1,6 +1,6 @@
 import logging
 import time
-from typing import Optional
+from typing import Optional, Any
 from janus.domain.models import TranslationResult
 from janus.ports.translation_port import ITranslator
 
@@ -18,9 +18,11 @@ class MarianTranslator(ITranslator):
         self,
         model_name_or_path: Optional[str] = None,
         use_onnx: bool = True,
+        llm_provider: Optional[Any] = None,
     ) -> None:
         self.model_name_or_path = model_name_or_path
         self.use_onnx = use_onnx
+        self.llm_provider = llm_provider
         self._pipeline = None
 
     def _init_pipeline(self) -> None:
@@ -108,6 +110,29 @@ class MarianTranslator(ITranslator):
             "yes": "Sí",
             "no": "No",
         }
+
+        # Try configured LLM provider (e.g. Google Gemini Flash) if available
+        if self.llm_provider:
+            try:
+                prompt = (
+                    f"Translate the following text accurately from {source_lang.upper()} to {target_lang.upper()}. "
+                    f"Output ONLY the translated text without commentary, explanation, or quotes:\n\n{clean_text}"
+                )
+                translated = self.llm_provider.generate(prompt=prompt).strip()
+                if translated:
+                    if translated.startswith('"') and translated.endswith('"'):
+                        translated = translated[1:-1].strip()
+                    elapsed = (time.perf_counter() - start) * 1000.0
+                    logger.info(f"Translated via LLM ({source_lang} -> {target_lang}): '{clean_text}' -> '{translated}'")
+                    return TranslationResult(
+                        source_text=clean_text,
+                        source_lang=source_lang,
+                        translated_text=translated,
+                        target_lang=target_lang,
+                        latency_ms=round(elapsed, 2),
+                    )
+            except Exception as le:
+                logger.debug(f"LLM translation attempt failed: {le}")
 
         # Try local Ollama LLM translation if available
         try:

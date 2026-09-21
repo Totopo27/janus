@@ -103,14 +103,19 @@
       <div class="byom-telemetry-badge" id="byomTelemetryBadge" title="Motor LLM activo para síntesis y notas">
         <span class="byom-dot" aria-hidden="true"></span>
         <span class="byom-label">Inferencia:</span>
-        <span class="byom-engine" id="byomEngineName">Ollama Local (qwen2.5:3b)</span>
+        <span class="byom-engine" id="byomEngineName">Google Gemini Cloud (gemini-3.5-flash)</span>
       </div>
 
       <div class="session-toggles">
-        <label class="toggle-control" for="audioPlaybackToggle">
-          <input type="checkbox" id="audioPlaybackToggle" checked />
+        <label class="toggle-control" for="vadModeToggle" title="Activa la segmentación continua automática por detección de pausas de silencio">
+          <input type="checkbox" id="vadModeToggle" />
           <span class="toggle-slider" aria-hidden="true"></span>
-          <span class="toggle-text">Voz Sintetizada (Supertonic TTS)</span>
+          <span class="toggle-text">Manos Libres (VAD)</span>
+        </label>
+        <label class="toggle-control" for="audioPlaybackToggle" title="Reproducir voz sintetizada traducida en altavoces (desactivar para reuniones presenciales silenciosas)">
+          <input type="checkbox" id="audioPlaybackToggle" />
+          <span class="toggle-slider" aria-hidden="true"></span>
+          <span class="toggle-text">Voz Sintetizada</span>
         </label>
         <button id="clearFeedBtn" class="btn-subtle" title="Limpiar feed de la sesión">Limpiar Transmisión</button>
       </div>
@@ -148,7 +153,7 @@
                 <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
               </svg>
             </span>
-            <span id="recordText" class="record-label">Iniciar Grabación (Manos Libres)</span>
+            <span id="recordText" class="record-label">Grabar Turno (Manual)</span>
           </button>
 
           <!-- Live Hands-Free VAD Telemetry Dock -->

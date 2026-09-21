@@ -52,10 +52,13 @@ class GeminiAdapter(ILLMProvider):
             "x-goog-api-key": self.api_key,
         }
 
+    def _candidate_models(self) -> List[str]:
+        preferred = [self.model] if self.model not in ["gemini-3.8-flash", "gemini-2.5-flash"] else ["gemini-3.5-flash", "gemini-3.8-flash"]
+        fallbacks = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.6-flash"]
+        return list(dict.fromkeys(preferred + fallbacks))
+
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         self._ensure_api_key()
-        url = f"{self.BASE_URL}/{self.model}:generateContent"
-
         payload = {
             "contents": [
                 {
@@ -69,23 +72,40 @@ class GeminiAdapter(ILLMProvider):
                 "parts": [{"text": system_prompt}]
             }
 
-        try:
-            resp = httpx.post(
-                url,
-                json=payload,
-                headers=self._auth_headers(),
-                timeout=self.timeout_seconds,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                return ""
-            parts = candidates[0].get("content", {}).get("parts", [])
-            return "".join(part.get("text", "") for part in parts)
-        except Exception as e:
-            logger.error(f"Gemini generate request failed: {e}")
-            raise RuntimeError(f"Error communicating with Google Gemini: {e}") from e
+        last_error = None
+        for model_name in self._candidate_models():
+            url = f"{self.BASE_URL}/{model_name}:generateContent?key={self.api_key}"
+            try:
+                resp = httpx.post(
+                    url,
+                    json=payload,
+                    headers=self._auth_headers(),
+                    timeout=self.timeout_seconds,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        return ""
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    return "".join(part.get("text", "") for part in parts)
+                elif resp.status_code in (503, 404, 429):
+                    logger.warning(f"Gemini model {model_name} returned status {resp.status_code}. Trying fallback...")
+                    last_error = f"{model_name}: {resp.status_code} - {resp.text}"
+                    continue
+                else:
+                    resp.raise_for_status()
+            except httpx.TimeoutException:
+                logger.warning(f"Gemini model {model_name} timed out. Trying fallback...")
+                last_error = f"{model_name} timed out"
+                continue
+            except Exception as e:
+                logger.warning(f"Gemini request failed for {model_name}: {e}. Trying fallback...")
+                last_error = str(e)
+                continue
+
+        logger.error(f"All Gemini candidate models failed: {last_error}")
+        raise RuntimeError(f"Error communicating with Google Gemini: {last_error}")
 
     def chat_with_meeting(
         self,
@@ -94,8 +114,6 @@ class GeminiAdapter(ILLMProvider):
         question: str,
     ) -> str:
         self._ensure_api_key()
-        url = f"{self.BASE_URL}/{self.model}:generateContent"
-
         system_instruction = (
             "Eres el asistente inteligente de Janus para esta reunión. "
             "Responde a las preguntas de los participantes basándote en el contexto y transcripción provista. "
@@ -124,20 +142,37 @@ class GeminiAdapter(ILLMProvider):
             "contents": contents,
         }
 
-        try:
-            resp = httpx.post(
-                url,
-                json=payload,
-                headers=self._auth_headers(),
-                timeout=self.timeout_seconds,
-            )
-            resp.raise_for_status()
-            data = resp.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                return ""
-            parts = candidates[0].get("content", {}).get("parts", [])
-            return "".join(part.get("text", "") for part in parts)
-        except Exception as e:
-            logger.error(f"Gemini chat request failed: {e}")
-            raise RuntimeError(f"Error communicating with Google Gemini chat: {e}") from e
+        last_error = None
+        for model_name in self._candidate_models():
+            url = f"{self.BASE_URL}/{model_name}:generateContent?key={self.api_key}"
+            try:
+                resp = httpx.post(
+                    url,
+                    json=payload,
+                    headers=self._auth_headers(),
+                    timeout=self.timeout_seconds,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        return ""
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    return "".join(part.get("text", "") for part in parts)
+                elif resp.status_code in (503, 404, 429):
+                    logger.warning(f"Gemini chat model {model_name} returned status {resp.status_code}. Trying fallback...")
+                    last_error = f"{model_name}: {resp.status_code} - {resp.text}"
+                    continue
+                else:
+                    resp.raise_for_status()
+            except httpx.TimeoutException:
+                logger.warning(f"Gemini chat model {model_name} timed out. Trying fallback...")
+                last_error = f"{model_name} timed out"
+                continue
+            except Exception as e:
+                logger.warning(f"Gemini chat request failed for {model_name}: {e}. Trying fallback...")
+                last_error = str(e)
+                continue
+
+        logger.error(f"All Gemini candidate chat models failed: {last_error}")
+        raise RuntimeError(f"Error communicating with Google Gemini chat: {last_error}")

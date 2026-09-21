@@ -167,20 +167,6 @@ class SpeakerDiarizationService:
 
             logger.info(f"[{session_id}] Best acoustic speaker match: '{best_id}' with score {best_score:.3f}")
 
-            # If the best match is significantly lower than threshold and we have fewer than 6 speakers,
-            # this represents a new distinct participant in the room!
-            if best_score < (self.similarity_threshold - 0.05) and manager.num_speakers < 6:
-                new_idx = manager.num_speakers + 1
-                new_spk_id = f"speaker_{new_idx}"
-                new_display_name = f"Hablante {new_idx}"
-                manager.add(new_spk_id, embedding)
-                speaker_names_map[new_spk_id] = new_display_name
-                logger.info(
-                    f"[{session_id}] Registered new speaker voice profile '{new_spk_id}' "
-                    f"({new_display_name}) [best match was {best_id} with score {best_score:.3f}]"
-                )
-                return new_spk_id, new_display_name, float(1.0 - best_score)
-
             display_name = speaker_names_map.get(best_id, best_id.capitalize())
             return best_id, display_name, float(best_score)
 

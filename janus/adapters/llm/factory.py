@@ -16,8 +16,9 @@ class LLMProviderFactory:
     """
 
     @staticmethod
-    def create(provider: Optional[str] = None, config: Optional[Dict[str, Any]] = None) -> ILLMProvider:
-        cfg = config or {}
+    def create(provider: Optional[str] = None, config: Optional[Dict[str, Any]] = None, **kwargs) -> ILLMProvider:
+        cfg = dict(config or {})
+        cfg.update(kwargs)
         prov = (provider or os.getenv("LLM_PROVIDER", "ollama")).lower()
 
         if prov == "mock":

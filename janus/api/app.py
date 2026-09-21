@@ -1,8 +1,11 @@
 import os
+import logging
 from typing import Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
+
+logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse
 from janus.api.routes import create_api_router
 from janus.api.websockets import create_websocket_router
@@ -78,7 +81,12 @@ def create_app(
     # Initialize BYOM & Chat service
     llm_factory = LLMProviderFactory()
     if llm_provider is None:
-        llm_provider = llm_factory.create("ollama")
+        gemini_key = os.environ.get("GEMINI_API_KEY", None)
+        if gemini_key:
+            llm_provider = llm_factory.create("gemini", api_key=gemini_key, model="gemini-3.5-flash")
+            logger.info("Janus LLM Intelligence active: Google Gemini Flash Cloud.")
+        else:
+            llm_provider = llm_factory.create("ollama")
     if chat_service is None:
         chat_service = MeetingChatService(repository=meeting_repo, llm_provider=llm_provider)
 
@@ -95,7 +103,7 @@ def create_app(
         session_service = SessionService()
     if orchestrator is None:
         stt = SherpaSttAdapter()
-        mt = MarianTranslator()
+        mt = MarianTranslator(llm_provider=llm_provider)
         tts = SupertonicTtsAdapter()
         if diarizer is None:
             diarizer = SpeakerDiarizationService()
