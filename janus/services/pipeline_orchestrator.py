@@ -39,6 +39,7 @@ class PipelineOrchestrator:
         live_notetaker: Optional[Any] = None,
         diarizer: Optional[Any] = None,
         segmenter: Optional[Any] = None,
+        enable_vad_slicing: bool = False,
     ) -> None:
         self.stt = stt_engine
         self.mt = translation_engine
@@ -49,6 +50,7 @@ class PipelineOrchestrator:
         self.live_notetaker = live_notetaker
         self.diarizer = diarizer
         self.segmenter = segmenter
+        self.enable_vad_slicing = enable_vad_slicing
 
     async def process_turn(
         self,
@@ -58,14 +60,15 @@ class PipelineOrchestrator:
         language: Optional[str] = None,
     ) -> Optional[ConversationTurn]:
         """
-        Executes turn processing. If audio contains multiple distinct turns
-        separated by silence, slices them and processes each individually.
+        Executes turn processing for a conversational turn.
+        Audio is processed as a complete, unbroken acoustic unit by default to ensure
+        Whisper maintains full sentence context and avoids hallucination.
         """
         if audio.is_empty:
             logger.debug("Received empty audio chunk, skipping turn.")
             return None
 
-        if self.segmenter and audio.duration_seconds >= 2.0:
+        if self.enable_vad_slicing and self.segmenter and audio.duration_seconds >= 2.0:
             sub_chunks = self.segmenter.segment_audio(audio)
             if len(sub_chunks) > 1:
                 logger.info(f"[{session.session_id}] Silero VAD sliced multi-speaker audio into {len(sub_chunks)} turns.")

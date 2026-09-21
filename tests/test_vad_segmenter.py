@@ -88,6 +88,7 @@ def test_pipeline_orchestrator_slices_with_segmenter():
             translation_engine=mock_mt,
             tts_engine=mock_tts,
             segmenter=mock_segmenter,
+            enable_vad_slicing=True,
         )
 
         session = Session(

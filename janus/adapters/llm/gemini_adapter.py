@@ -18,7 +18,7 @@ class GeminiAdapter(ILLMProvider):
     def __init__(
         self,
         api_key: str,
-        model: str = "gemini-3.6-flash",
+        model: str = "gemini-3.5-flash",
         timeout_seconds: float = 60.0,
     ) -> None:
         self.api_key = api_key
@@ -53,8 +53,8 @@ class GeminiAdapter(ILLMProvider):
         }
 
     def _candidate_models(self) -> List[str]:
-        preferred = [self.model] if self.model not in ["gemini-3.8-flash", "gemini-2.5-flash"] else ["gemini-3.5-flash", "gemini-3.8-flash"]
-        fallbacks = ["gemini-3.5-flash", "gemini-3.8-flash", "gemini-3.6-flash"]
+        preferred = ["gemini-3.5-flash"]
+        fallbacks = ["gemini-3.8-flash", "gemini-3.6-flash"]
         return list(dict.fromkeys(preferred + fallbacks))
 
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
