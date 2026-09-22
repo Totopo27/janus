@@ -483,6 +483,8 @@ def create_api_router(
 
         new_provider = llm_factory.create(provider=request.provider, config=config_dict)
         chat_service.llm_provider = new_provider
+        if live_notetaker and hasattr(live_notetaker, "llm_provider"):
+            live_notetaker.llm_provider = new_provider
         model = getattr(new_provider, "model", None)
         healthy = new_provider.health_check()
         return LLMConfigResponse(

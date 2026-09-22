@@ -82,7 +82,7 @@ def create_app(
     # Initialize BYOM & Chat service
     llm_factory = LLMProviderFactory()
     if llm_provider is None:
-        gemini_key = os.environ.get("GEMINI_API_KEY", None)
+        gemini_key = os.environ.get("GEMINI_API_KEY")
         if gemini_key:
             llm_provider = llm_factory.create("gemini", api_key=gemini_key, model="gemini-3.5-flash")
             logger.info("Janus LLM Intelligence active: Google Gemini Flash Cloud.")

@@ -45,3 +45,4 @@ results/
 *.swp
 .agents/
 skills-lock.json
+.atl/

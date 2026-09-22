@@ -135,25 +135,18 @@ class MarianTranslator(ITranslator):
                 logger.debug(f"LLM translation attempt failed: {le}")
 
         # Try local Ollama LLM translation if available
-        try:
-            import urllib.request
-            import json
-            prompt = f"Translate the following text accurately from {source_lang.upper()} to {target_lang.upper()}. Output ONLY the translated text without commentary, explanation, or quotes:\n\n{clean_text}"
-            req_data = json.dumps({
-                "model": "qwen2.5:3b",
-                "prompt": prompt,
-                "stream": False,
-                "options": {"temperature": 0.1}
-            }).encode("utf-8")
-            req = urllib.request.Request(
-                "http://localhost:11434/api/generate",
-                data=req_data,
-                headers={"Content-Type": "application/json"}
-            )
-            with urllib.request.urlopen(req, timeout=3.0) as resp:
-                res_json = json.loads(resp.read().decode("utf-8"))
-                translated = res_json.get("response", "").strip()
+        if not self.llm_provider:
+            try:
+                from janus.adapters.llm.ollama_adapter import OllamaAdapter
+                ollama = OllamaAdapter(base_url="http://localhost:11434", model="qwen2.5:3b", timeout=3.0)
+                prompt = (
+                    f"Translate the following text accurately from {source_lang.upper()} to {target_lang.upper()}. "
+                    f"Output ONLY the translated text without commentary, explanation, or quotes:\n\n{clean_text}"
+                )
+                translated = ollama.generate(prompt=prompt).strip()
                 if translated:
+                    if translated.startswith('"') and translated.endswith('"'):
+                        translated = translated[1:-1].strip()
                     elapsed = (time.perf_counter() - start) * 1000.0
                     logger.info(f"Translated via Ollama ({source_lang} -> {target_lang}): '{clean_text}' -> '{translated}'")
                     return TranslationResult(
@@ -163,8 +156,8 @@ class MarianTranslator(ITranslator):
                         target_lang=target_lang,
                         latency_ms=round(elapsed, 2),
                     )
-        except Exception as oe:
-            logger.debug(f"Ollama local translation fallback skipped: {oe}")
+            except Exception as oe:
+                logger.debug(f"Ollama local translation fallback skipped: {oe}")
 
         normalized = clean_text.lower()
         if source_lang.startswith("es") and target_lang.startswith("en"):

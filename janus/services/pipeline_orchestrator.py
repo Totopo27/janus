@@ -144,7 +144,7 @@ class PipelineOrchestrator:
 
         # 3. Automatic Speech Recognition (with optional explicit language conditioning)
         effective_lang = language if language not in [None, "auto", ""] else None
-        transcription = self.stt.transcribe(audio=audio, language=effective_lang)
+        transcription = await asyncio.to_thread(self.stt.transcribe, audio=audio, language=effective_lang)
         if not transcription or not transcription.text.strip():
             logger.debug(f"[{session.session_id}] No speech recognized or silence in audio chunk.")
             return None
@@ -174,7 +174,8 @@ class PipelineOrchestrator:
 
         # 3. Conversational Fusion or Machine Translation
         if self.fusion_service:
-            fused_turns = self.fusion_service.fuse_and_translate(
+            fused_turns = await asyncio.to_thread(
+                self.fusion_service.fuse_and_translate,
                 text=transcription.text,
                 primary_speaker_id=effective_speaker_id,
                 primary_speaker_name=effective_speaker_name,
@@ -185,7 +186,8 @@ class PipelineOrchestrator:
                 acoustic_hint=acoustic_hint,
             )
         else:
-            translation = self.mt.translate(
+            translation = await asyncio.to_thread(
+                self.mt.translate,
                 text=transcription.text,
                 source_lang=source_lang,
                 target_lang=target_lang,
@@ -220,7 +222,8 @@ class PipelineOrchestrator:
             # 4. Text-to-Speech Synthesis (TTS)
             synthesis = SynthesisResult(audio_bytes=b"", sample_rate=16000, duration_seconds=0.0, format="wav")
             try:
-                synthesis = self.tts.synthesize(
+                synthesis = await asyncio.to_thread(
+                    self.tts.synthesize,
                     text=fused.translated_text,
                     language=fused.target_lang,
                     voice_style=counterpart.preferred_voice_style,
@@ -242,7 +245,7 @@ class PipelineOrchestrator:
             # 6. Auto-persist to SQLite
             if self.storage:
                 try:
-                    self.storage.save_turn(session.session_id, turn)
+                    await asyncio.to_thread(self.storage.save_turn, session.session_id, turn)
                 except Exception as e:
                     logger.warning(f"Failed to auto-persist turn to storage repository: {e}")
 
