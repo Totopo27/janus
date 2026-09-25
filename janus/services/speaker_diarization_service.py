@@ -236,7 +236,9 @@ class SpeakerDiarizationService:
                 logger.debug(f"[{session_id}] Similarity with '{registered_id}': {similarity:.3f} (thresh={self.similarity_threshold})")
 
                 if similarity >= self.similarity_threshold:
-                    # Matches speaker 1
+                    # Matches speaker 1: enrich voice profile if match is high confidence
+                    if similarity >= 0.58:
+                        manager.add(registered_id, embedding)
                     return registered_id, speaker_names_map.get(registered_id, "Hablante 1"), float(similarity)
                 else:
                     # New speaker detected! Register speaker 2
@@ -261,6 +263,10 @@ class SpeakerDiarizationService:
                     best_id = spk_id
 
             logger.info(f"[{session_id}] Best acoustic speaker match: '{best_id}' with score {best_score:.3f}")
+
+            # Refine speaker centroid if high confidence to adapt to acoustic variations
+            if best_score >= 0.58:
+                manager.add(best_id, embedding)
 
             display_name = speaker_names_map.get(best_id, best_id.capitalize())
             return best_id, display_name, float(best_score)

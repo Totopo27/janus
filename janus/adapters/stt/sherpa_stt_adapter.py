@@ -148,6 +148,13 @@ class SherpaSttAdapter(ISpeechRecognizer):
             try:
                 import numpy as np
                 samples = np.frombuffer(audio.data, dtype=np.int16).astype(np.float32) / 32768.0
+
+                # Peak amplitude normalization for robust Whisper token activation on laptop/browser mics
+                peak = float(np.max(np.abs(samples))) if len(samples) > 0 else 0.0
+                if peak > 0.005:
+                    target_gain = min(0.92 / peak, 5.0)  # Max gain boost of 5x to avoid amplifying noise floor
+                    samples = samples * target_gain
+
                 stream = recognizer.create_stream()
                 stream.accept_waveform(audio.sample_rate, samples)
                 recognizer.decode_stream(stream)

@@ -109,12 +109,25 @@ pip install -r requirements.txt
 pytest
 ```
 
-### 4. Start Janus Server
+### 4. Configuration & Models (Optional)
 ```bash
-python run.py
+# Copy environment configuration template
+cp .env.example .env
+
+# Optional: Download offline ONNX models (Sherpa Whisper Small, CAM++, Silero VAD)
+python scripts/download_models.py
 ```
 
-Open `http://localhost:8000` (or `http://localhost:8080`) in your browser. Connect a second device (tablet or phone on the same Wi-Fi network) to use the live teleprompter display.
+### 5. Start Janus Server
+```bash
+# Standard local desktop run:
+python run.py
+
+# Multi-device Wi-Fi access (for connecting a tablet or smartphone as a teleprompter):
+python run.py --lan
+```
+
+Open `http://localhost:8000` on your desktop, or the LAN IP displayed in console on your tablet or smartphone.
 
 ---
 

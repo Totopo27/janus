@@ -51,19 +51,11 @@ def create_app(
     if not os.path.isabs(db_path):
         db_path = os.path.join(project_root, db_path)
 
-    # Local-only CORS: allow localhost on any port (dev) and file:// origins.
-    # allow_origins=["*"] combined with allow_credentials=True is invalid per the
-    # CORS spec and rejected by browsers — restrict to known local origins instead.
+    # Allow local development, private IP ranges (LAN/Wi-Fi devices like tablets/phones)
+    # matching standard RFC 1918 (192.168.x.x, 10.x.x.x, 172.16-31.x.x) and localhost.
     app.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "http://localhost",
-            "http://127.0.0.1",
-            "http://localhost:8000",
-            "http://127.0.0.1:8000",
-            "http://localhost:8080",
-            "http://127.0.0.1:8080",
-        ],
+        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$",
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
@@ -107,7 +99,8 @@ def create_app(
         mt = MarianTranslator(llm_provider=llm_provider)
         tts = SupertonicTtsAdapter()
         if diarizer is None:
-            diarizer = SpeakerDiarizationService()
+            diar_threshold = float(os.environ.get("SPEAKER_SIMILARITY_THRESHOLD", "0.50"))
+            diarizer = SpeakerDiarizationService(similarity_threshold=diar_threshold)
         if segmenter is None:
             segmenter = SileroVadSegmenter()
         fusion_service = ConversationalFusionService(llm_provider=llm_provider, fallback_translator=mt)
@@ -121,6 +114,7 @@ def create_app(
             diarizer=diarizer,
             segmenter=segmenter,
             fusion_service=fusion_service,
+            enable_vad_slicing=True,
         )
 
     # Health check
@@ -137,6 +131,8 @@ def create_app(
             chat_service=chat_service,
             live_notetaker=live_notetaker,
             llm_factory=llm_factory,
+            fusion_service=fusion_service if 'fusion_service' in locals() else None,
+            translation_engine=mt if 'mt' in locals() else None,
         )
     )
 

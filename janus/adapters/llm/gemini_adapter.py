@@ -38,8 +38,8 @@ class GeminiAdapter(ILLMProvider):
         if not self.api_key or not self.api_key.strip():
             return False
         try:
-            url = f"{self.BASE_URL}?key={self.api_key}"
-            resp = httpx.get(url, timeout=5.0)
+            url = self.BASE_URL
+            resp = httpx.get(url, headers=self._auth_headers(), timeout=5.0)
             return resp.status_code == 200
         except Exception as e:
             logger.debug("Gemini health check failed: %s", e)
@@ -74,7 +74,7 @@ class GeminiAdapter(ILLMProvider):
 
         last_error = None
         for model_name in self._candidate_models():
-            url = f"{self.BASE_URL}/{model_name}:generateContent?key={self.api_key}"
+            url = f"{self.BASE_URL}/{model_name}:generateContent"
             try:
                 resp = httpx.post(
                     url,
@@ -144,7 +144,7 @@ class GeminiAdapter(ILLMProvider):
 
         last_error = None
         for model_name in self._candidate_models():
-            url = f"{self.BASE_URL}/{model_name}:generateContent?key={self.api_key}"
+            url = f"{self.BASE_URL}/{model_name}:generateContent"
             try:
                 resp = httpx.post(
                     url,

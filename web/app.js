@@ -444,7 +444,7 @@ async function sendAudioBlobToServer(blob, mimeType) {
       binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
     }
     const base64Audio = btoa(binary);
-    const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "es";
+    const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "auto";
 
     console.log(`[AudioCapture] Despachando turno (${blob.size} bytes, lang=${selectedLang})...`);
     localMicSocket.send(JSON.stringify({

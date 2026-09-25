@@ -53,6 +53,16 @@ def resolve_port(preferred_port: int, host: str = "127.0.0.1") -> int:
     return fallback_port
 
 
+def get_local_ip() -> str:
+    """Detect primary LAN IP address for multi-device access (tablets/phones)."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "127.0.0.1"
+
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Janus")
     parser.add_argument(
@@ -67,16 +77,26 @@ if __name__ == "__main__":
         default=os.environ.get("HOST", "127.0.0.1"),
         help="Host address (default: 127.0.0.1)",
     )
+    parser.add_argument(
+        "--lan",
+        action="store_true",
+        help="Bind to 0.0.0.0 and display local network IP for tablets/phones on the same Wi-Fi",
+    )
     args, unknown = parser.parse_known_args()
 
-    target_port = resolve_port(args.port, args.host)
+    bind_host = "0.0.0.0" if args.lan else args.host
+    target_port = resolve_port(args.port, "127.0.0.1" if bind_host == "0.0.0.0" else bind_host)
+
+    local_ip = get_local_ip()
 
     print(f"[*] Iniciando Janus en: {PROJECT_ROOT}")
-    print(f"[*] Interfaz Web disponible en: http://{args.host}:{target_port}")
+    print(f"[*] Interfaz Web Local: http://localhost:{target_port}")
+    if args.lan or bind_host == "0.0.0.0":
+        print(f"[*] Interfaz Web LAN (Tablet / Celular en la misma Wi-Fi): http://{local_ip}:{target_port}")
 
     uvicorn.run(
         "janus.api.app:app",
-        host=args.host,
+        host=bind_host,
         port=target_port,
         reload=True,
         log_level="info",

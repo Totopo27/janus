@@ -76,7 +76,7 @@ class PipelineOrchestrator:
             return None
 
         if self.enable_vad_slicing and self.segmenter and audio.duration_seconds >= 2.0:
-            sub_chunks = self.segmenter.segment_audio(audio)
+            sub_chunks = await asyncio.to_thread(self.segmenter.segment_audio, audio)
             if len(sub_chunks) > 1:
                 logger.info(f"[{session.session_id}] Silero VAD sliced multi-speaker audio into {len(sub_chunks)} turns.")
                 last_turn = None
@@ -101,12 +101,14 @@ class PipelineOrchestrator:
         if audio.is_empty:
             return None
 
-        # 1. Voice Activity Detection (optional filter)
-        if self.vad and not self.vad.contains_speech(audio):
-            logger.debug("VAD detected no speech in audio chunk.")
-            return None
+        # 1. Voice Activity Detection (offloaded to thread to prevent loop blocking)
+        if self.vad:
+            has_speech = await asyncio.to_thread(self.vad.contains_speech, audio)
+            if not has_speech:
+                logger.debug("VAD detected no speech in audio chunk.")
+                return None
 
-        # 2. Acoustic Speaker Diarization for single-microphone scenarios
+        # 2. Acoustic Speaker Diarization (offloaded to thread)
         effective_speaker_id = speaker_id
         effective_speaker_name = None
         acoustic_hint = None
@@ -114,18 +116,20 @@ class PipelineOrchestrator:
         if self.diarizer:
             if hasattr(self.diarizer, "analyze_segments"):
                 try:
-                    report = self.diarizer.analyze_segments(audio)
+                    report = await asyncio.to_thread(self.diarizer.analyze_segments, audio)
                     acoustic_hint = report.acoustic_hint
                     logger.info(f"[{session.session_id}] PyAnnote Diarization: {report.num_speakers} speaker(s), monologue={report.is_monologue}")
                 except Exception as de:
                     logger.debug(f"Segment analysis skipped: {de}")
 
             if speaker_id in ["local", "speaker_1", "speaker_2", ""]:
-                diar_id, diar_name, conf = self.diarizer.identify_speaker(
+                diar_res = await asyncio.to_thread(
+                    self.diarizer.identify_speaker,
                     audio=audio,
                     session_id=session.session_id,
                     fallback_speaker_id=speaker_id,
                 )
+                diar_id, diar_name, conf = diar_res
                 if diar_id:
                     effective_speaker_id = diar_id
                     effective_speaker_name = diar_name

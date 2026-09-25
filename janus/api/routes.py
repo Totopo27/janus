@@ -126,6 +126,8 @@ def create_api_router(
     chat_service: Optional[MeetingChatService] = None,
     live_notetaker: Optional[Any] = None,
     llm_factory: Optional[LLMProviderFactory] = None,
+    fusion_service: Optional[Any] = None,
+    translation_engine: Optional[Any] = None,
 ) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["Sessions, Meetings & BYOM"])
 
@@ -485,6 +487,10 @@ def create_api_router(
         chat_service.llm_provider = new_provider
         if live_notetaker and hasattr(live_notetaker, "llm_provider"):
             live_notetaker.llm_provider = new_provider
+        if fusion_service and hasattr(fusion_service, "llm_provider"):
+            fusion_service.llm_provider = new_provider
+        if translation_engine and hasattr(translation_engine, "llm_provider"):
+            translation_engine.llm_provider = new_provider
         model = getattr(new_provider, "model", None)
         healthy = new_provider.health_check()
         return LLMConfigResponse(
