@@ -99,8 +99,16 @@ def create_app(
         mt = MarianTranslator(llm_provider=llm_provider)
         tts = SupertonicTtsAdapter()
         if diarizer is None:
-            diar_threshold = float(os.environ.get("SPEAKER_SIMILARITY_THRESHOLD", "0.50"))
-            diarizer = SpeakerDiarizationService(similarity_threshold=diar_threshold)
+            # Check for Nemotron 3 Diarization ONNX model first for overlapped speech support
+            from janus.services.nemotron_diarization_service import NemotronDiarizationService
+            nemotron_service = NemotronDiarizationService()
+            if nemotron_service._resolve_model_path():
+                diarizer = nemotron_service
+                logger.info("Janus acoustic diarization engine initialized: NVIDIA Nemotron 3 (Sortformer ONNX).")
+            else:
+                diar_threshold = float(os.environ.get("SPEAKER_SIMILARITY_THRESHOLD", "0.50"))
+                diarizer = SpeakerDiarizationService(similarity_threshold=diar_threshold)
+                logger.info("Janus acoustic diarization engine initialized: Sherpa-ONNX CAM++ / PyAnnote.")
         if segmenter is None:
             segmenter = SileroVadSegmenter()
         fusion_service = ConversationalFusionService(llm_provider=llm_provider, fallback_translator=mt)

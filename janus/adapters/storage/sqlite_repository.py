@@ -411,7 +411,7 @@ class SqliteMeetingRepository(IMeetingRepository):
                 t.speaker_id,
                 t.original_text,
                 t.translated_text,
-                snippet(turns_fts, -1, '<b>', '</b>', '...', 15) AS snippet_text,
+                snippet(turns_fts, -1, '<mark>', '</mark>', '...', 15) AS snippet_text,
                 m.topic_key,
                 t.created_at
             FROM turns_fts f

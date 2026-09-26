@@ -114,7 +114,28 @@ class PipelineOrchestrator:
         acoustic_hint = None
 
         if self.diarizer:
-            if hasattr(self.diarizer, "analyze_segments"):
+            # Nemotron 3 Diarization (Sortformer) with native Overlap Detection
+            if hasattr(self.diarizer, "analyze") and not hasattr(self.diarizer, "analyze_segments"):
+                try:
+                    nemotron_report = await asyncio.to_thread(self.diarizer.analyze, audio)
+                    acoustic_hint = nemotron_report.acoustic_hint
+                    logger.info(
+                        f"[{session.session_id}] Nemotron Diarization: {nemotron_report.num_speakers} speaker(s), "
+                        f"monologue={nemotron_report.is_monologue}, overlap={nemotron_report.has_overlap} "
+                        f"({nemotron_report.overlap_duration}s)"
+                    )
+                    # If Nemotron resolved a primary dominant speaker in the chunk
+                    if nemotron_report.segments and speaker_id in ["local", "speaker_1", "speaker_2", ""]:
+                        primary_idx = nemotron_report.segments[0].speaker_index
+                        effective_speaker_id = f"speaker_{primary_idx}"
+                        speaker_profile = session.get_speaker(effective_speaker_id)
+                        if speaker_profile:
+                            effective_speaker_name = speaker_profile.name
+                except Exception as ne:
+                    logger.debug(f"Nemotron segment analysis skipped: {ne}")
+
+            # PyAnnote fallback if present
+            elif hasattr(self.diarizer, "analyze_segments"):
                 try:
                     report = await asyncio.to_thread(self.diarizer.analyze_segments, audio)
                     acoustic_hint = report.acoustic_hint
@@ -122,7 +143,7 @@ class PipelineOrchestrator:
                 except Exception as de:
                     logger.debug(f"Segment analysis skipped: {de}")
 
-            if speaker_id in ["local", "speaker_1", "speaker_2", ""]:
+            if hasattr(self.diarizer, "identify_speaker") and speaker_id in ["local", "speaker_1", "speaker_2", ""]:
                 diar_res = await asyncio.to_thread(
                     self.diarizer.identify_speaker,
                     audio=audio,
