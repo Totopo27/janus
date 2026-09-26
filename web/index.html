@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Janus</title>
+  <title>Janus // Field S2ST-01</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 
@@ -14,30 +14,32 @@
   <!-- Accessible Skip Link for Keyboard Navigation -->
   <a href="#main" class="skip-link">Saltar al contenido principal</a>
 
-  <!-- Enterprise Header -->
+  <!-- TE-01 Hardware Top Bar -->
   <header>
     <div class="logo-group">
       <div class="brand-badge" aria-hidden="true">
-        <svg class="icon-brand" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <path d="M2 10v4M6 6v12M10 3v18M14 8v8M18 5v14M22 10v4"/>
+        <svg class="icon-brand" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <circle cx="12" cy="12" r="9"/>
+          <path d="M12 3v18"/>
         </svg>
       </div>
-      <div>
+      <div class="brand-title-wrap">
         <h1 class="brand-title">JANUS</h1>
+        <span class="brand-model-code">// FIELD S2ST-01</span>
       </div>
     </div>
 
     <div class="header-actions">
       <button id="openSearchBtn" class="btn-ghost" title="Buscar en transcripciones y acuerdos anteriores" aria-label="Buscar en historial SQLite FTS5">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
         </svg>
-        <span>Historial (FTS5)</span>
+        <span>FTS5</span>
       </button>
 
       <button id="finalizeBtn" class="btn-primary-action" title="Generar minuta ejecutiva y resumen">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <polyline points="20 6 9 17 4 12"/>
         </svg>
         <span>Generar Minuta</span>
       </button>
@@ -50,31 +52,31 @@
   </header>
 
   <main id="main">
-    <!-- Scenario Selection Bar (Segmented Control) -->
+    <!-- TE Hardware Scenario Control Bar -->
     <section class="scenario-panel" aria-label="Configuración de audio de la sesión">
       <div class="scenario-segmented-control">
-        <span class="control-label" id="scenarioLabel">Escenario de Audio:</span>
+        <span class="control-label" id="scenarioLabel">Canal Audio:</span>
         <div class="segmented-tabs" role="radiogroup" aria-labelledby="scenarioLabel">
           <label class="segmented-tab active" id="scenarioInPersonLabel">
             <input type="radio" name="audioScenario" id="scenarioInPerson" value="in-person" checked />
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
             </svg>
-            <span>Presencial / Micrófono Único</span>
+            <span>Presencial (Mic Único)</span>
           </label>
           <label class="segmented-tab" id="scenarioVideocallLabel">
             <input type="radio" name="audioScenario" id="scenarioVideocall" value="videocall" />
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-              <rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/><line x1="12" x2="12" y1="17" y2="21"/>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <rect width="20" height="14" x="2" y="3" rx="2"/><line x1="8" x2="16" y1="21" y2="21"/>
             </svg>
-            <span>Videollamada Doble Canal</span>
+            <span>Videollamada (Doble Canal)</span>
           </label>
         </div>
       </div>
 
       <div id="videocallControls" class="videocall-actions" style="display: none;">
         <button id="connectMeetAudioBtn" class="btn-capture" aria-label="Capturar audio remoto de pestaña">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
             <polygon points="5 3 19 12 5 21 5 3"/>
           </svg>
           <span>Capturar Audio Remoto (Pestaña)</span>
@@ -83,14 +85,14 @@
       </div>
     </section>
 
-    <!-- Session Participants, Inference Telemetry & Audio Controls Bar -->
+    <!-- Session Strip: Language, BYOM Engine & Hardware Toggles -->
     <section class="session-strip" aria-label="Controles de la sesión y participantes">
       <div class="language-selector-group" role="region" aria-label="Idioma de entrada">
         <label for="inputLanguageSelect" class="lang-select-label">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-            <circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/>
           </svg>
-          <span class="participant-name">Idioma Entrada:</span>
+          <span>Entrada:</span>
         </label>
         <select id="inputLanguageSelect" class="lang-select-input" aria-label="Seleccionar idioma de entrada para transcripción">
           <option value="auto" selected>Auto-Detección Bilingüe (ES / EN)</option>
@@ -99,64 +101,66 @@
         </select>
       </div>
 
-      <!-- Subtle BYOM Inference Telemetry Indicator -->
+      <!-- TE Hardware Telemetry Screen -->
       <div class="byom-telemetry-badge" id="byomTelemetryBadge" title="Motor LLM activo para síntesis y notas">
         <span class="byom-dot" aria-hidden="true"></span>
-        <span class="byom-label">Inferencia:</span>
-        <span class="byom-engine" id="byomEngineName">Google Gemini Cloud (gemini-3.5-flash)</span>
+        <span class="byom-label">Motor Inferencia:</span>
+        <span class="byom-engine" id="byomEngineName">Google Gemini Flash</span>
       </div>
 
       <div class="session-toggles">
         <label class="toggle-control" for="vadModeToggle" title="Activa la segmentación continua automática por detección de pausas de silencio">
           <input type="checkbox" id="vadModeToggle" />
           <span class="toggle-slider" aria-hidden="true"></span>
-          <span class="toggle-text">Manos Libres (VAD)</span>
+          <span>VAD Manos Libres</span>
         </label>
-        <label class="toggle-control" for="audioPlaybackToggle" title="Reproducir voz sintetizada traducida en altavoces (desactivar para reuniones presenciales silenciosas)">
+        <label class="toggle-control" for="audioPlaybackToggle" title="Reproducir voz sintetizada traducida en altavoces">
           <input type="checkbox" id="audioPlaybackToggle" />
           <span class="toggle-slider" aria-hidden="true"></span>
-          <span class="toggle-text">Voz Sintetizada</span>
+          <span>Voz Sintetizada</span>
         </label>
-        <button id="clearFeedBtn" class="btn-subtle" title="Limpiar feed de la sesión">Limpiar Transmisión</button>
+        <button id="clearFeedBtn" class="btn-subtle" title="Limpiar feed de la sesión">Limpiar Feed</button>
       </div>
     </section>
 
-    <!-- Split-View Workspace (Teleprompter / Companion) -->
+    <!-- Otter-Style 2-Column Split Workspace -->
     <div class="workspace-grid">
-      <!-- Left Column: Teleprompter & Speech Capture -->
+      <!-- Left Column: Audio Stream & Teleprompter Feed -->
       <section class="teleprompter-column" aria-label="Teleprompter y transcripción en vivo">
         <div class="card-panel teleprompter-panel">
           <div class="panel-header">
             <div class="panel-title">
-              <span class="section-badge">TELEPROMPTER</span>
-              <span>Subtítulos y Traducción Simultánea</span>
+              <span class="section-badge">STREAM</span>
+              <span>Transcripción & Traducción Simultánea</span>
             </div>
-            <div id="latencyDisplay" class="latency-chip" aria-label="Métrica de latencia">Latencia: ~350ms (ONNX CPU)</div>
+            <div id="latencyDisplay" class="latency-chip" aria-label="Métrica de latencia">NEMOTRON-3 ONNX // ~150ms</div>
           </div>
 
           <div id="feed" class="feed-container" role="region" aria-live="polite" aria-atomic="false" aria-label="Flujo de transcripción y traducción">
             <div class="feed-empty-state">
-              <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="empty-icon" aria-hidden="true" focusable="false">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="empty-icon" aria-hidden="true" focusable="false">
+                <circle cx="12" cy="12" r="8"/>
+                <line x1="12" y1="8" x2="12" y2="12"/>
+                <line x1="12" y1="16" x2="12.01" y2="16"/>
               </svg>
-              <p>Presioná el botón de voz para iniciar la captura.</p>
-              <span>Las transcripciones originales y traducciones en vivo aparecerán aquí con tipografía optimizada.</span>
+              <p>Presioná el botón de grabación para iniciar</p>
+              <span>El diálogo en vivo se segmentará por hablante con traducción y detección de solapamiento.</span>
             </div>
           </div>
         </div>
 
+        <!-- Hardware Record Dock -->
         <div class="voice-controls-dock">
-          <button id="recordBtn" class="btn-voice-record" aria-label="Iniciar grabación de audio">
-            <div class="record-pulse-ring" aria-hidden="true"></div>
+          <button id="recordBtn" class="btn-voice-record" aria-label="Iniciar captura de audio">
             <span id="recordIcon" class="record-icon-slot" aria-hidden="true">
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
-                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="22"/>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                <circle cx="12" cy="12" r="7"/>
               </svg>
             </span>
-            <span id="recordText" class="record-label">Grabar Turno (Manual)</span>
+            <span id="recordText" class="record-label">Grabar Turno</span>
           </button>
 
-          <!-- Live Hands-Free VAD Telemetry Dock -->
+          <!-- Hardware Segmented VU Meter -->
           <div id="vadTelemetryBar" class="vad-telemetry-bar hidden" aria-live="polite">
             <div class="vad-meter-container" title="Nivel de audio en tiempo real">
               <span class="vad-bar bar-1"></span>
@@ -176,72 +180,72 @@
         </div>
       </section>
 
-      <!-- Right Column: Live Notes & Intelligence Panel -->
+      <!-- Right Column: Otter Intelligence & Live Notes Companion -->
       <aside class="companion-column" aria-label="Notas y análisis en vivo">
         <div class="card-panel companion-panel">
           <div class="companion-top-bar">
             <div class="companion-heading">
               <div class="ai-badge-icon" aria-hidden="true">
-                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" focusable="false">
-                  <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
                 </svg>
               </div>
               <div>
-                <h2 class="companion-title">Janus</h2>
+                <h2 class="companion-title">Notas de Reunión</h2>
                 <div class="companion-live-status">
                   <span class="live-dot" aria-hidden="true"></span>
-                  <span>Escuchando en vivo</span>
+                  <span>Escucha Activa</span>
                 </div>
               </div>
             </div>
 
             <button id="catchUpBtn" class="btn-catchup" title="Sintetizar lo ocurrido en los últimos minutos" aria-label="Ponerse al día con resumen de los últimos minutos">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                 <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
               </svg>
-              <span>Ponerse al Día</span>
+              <span>Catch-Up</span>
             </button>
           </div>
 
           <!-- Current Topic Banner -->
           <div class="topic-callout" role="status">
-            <div class="callout-eyebrow">Tema en Discusión</div>
+            <div class="callout-eyebrow">Tema Actual</div>
             <div id="liveTopicText" class="topic-title" aria-live="polite">Inicio de la reunión</div>
           </div>
 
           <!-- Key Takeaways Section -->
           <div class="companion-block">
             <div class="block-header">
-              <span class="block-title">Conclusiones y Puntos Clave</span>
+              <span class="block-title">Puntos Clave</span>
               <button id="refreshLiveNotesBtn" class="btn-icon-subtle" title="Actualizar notas" aria-label="Actualizar notas en vivo">
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                   <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 21h5v-5"/>
                 </svg>
               </button>
             </div>
             <ul id="liveTakeawaysList" class="live-notes-list" aria-live="polite">
-              <li class="empty-hint">El asistente está escuchando activamente para sintetizar los acuerdos…</li>
+              <li class="empty-hint">Escuchando intervenciones para sintetizar acuerdos...</li>
             </ul>
           </div>
 
           <!-- Action Items Section -->
           <div class="companion-block">
             <div class="block-header">
-              <span class="block-title">Compromisos Detectados (Next Steps)</span>
+              <span class="block-title">Compromisos & Tareas</span>
             </div>
             <ul id="liveActionItemsList" class="live-action-list" aria-live="polite">
               <li class="empty-hint">Aún no se han detectado compromisos o tareas explícitas.</li>
             </ul>
           </div>
 
-          <!-- Catch Me Up Drawer / Box -->
+          <!-- Catch Me Up Drawer -->
           <div id="catchUpBox" class="catchup-drawer" role="region" aria-label="Resumen ejecutivo rápido" style="display: none;">
             <div class="catchup-header">
               <div class="catchup-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                   <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
                 </svg>
-                <span>Resumen Ejecutivo Rápido</span>
+                <span>Resumen Rápido</span>
               </div>
               <button id="closeCatchUpBtn" class="btn-close-compact" aria-label="Cerrar resumen rápido">&times;</button>
             </div>
@@ -257,26 +261,26 @@
     <div class="modal-window modal-wide">
       <div class="modal-head">
         <div class="modal-title-wrap">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
             <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
           </svg>
-          <h2 id="searchModalTitle">Búsqueda Histórica en Memoria (SQLite FTS5)</h2>
+          <h2 id="searchModalTitle">Búsqueda Histórica SQLite FTS5</h2>
         </div>
         <button id="closeSearchModalBtn" class="btn-close-modal" aria-label="Cerrar búsqueda histórica">&times;</button>
       </div>
       <div class="modal-content-area">
         <form class="search-form-row" id="searchForm" onsubmit="event.preventDefault();">
           <div class="input-with-icon">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
               <circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>
             </svg>
-            <input type="search" id="searchQueryInput" name="searchQuery" autocomplete="off" placeholder="Buscar palabras clave, acuerdos o frases…" aria-label="Término de búsqueda" />
+            <input type="search" id="searchQueryInput" name="searchQuery" autocomplete="off" placeholder="Palabras clave, acuerdos o frases..." aria-label="Término de búsqueda" />
           </div>
-          <input type="text" id="searchTopicInput" name="searchTopic" autocomplete="off" class="input-topic" placeholder="Tema (ej: arquitectura)…" aria-label="Filtrar por tema" />
+          <input type="text" id="searchTopicInput" name="searchTopic" autocomplete="off" class="input-topic" placeholder="Tema (ej: arquitectura)..." aria-label="Filtrar por tema" />
           <button type="submit" id="executeSearchBtn" class="btn-action-solid">Buscar</button>
         </form>
         <div id="searchResultsList" class="search-results-viewport" role="region" aria-live="polite" aria-label="Resultados de búsqueda">
-          <div class="empty-state-card">Ingresá un término para buscar en todas las reuniones registradas.</div>
+          <div class="empty-state-card">Ingresá un término para buscar en todas las sesiones registradas.</div>
         </div>
       </div>
     </div>
@@ -287,8 +291,8 @@
     <div class="modal-window modal-extra-wide">
       <div class="modal-head">
         <div class="modal-title-wrap">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+            <polyline points="20 6 9 17 4 12"/>
           </svg>
           <h2 id="notesModalTitle">Minuta Ejecutiva de Reunión</h2>
         </div>
@@ -315,8 +319,8 @@
         <div class="byom-interactive-box" role="region" aria-label="Consulta interactiva con Inteligencia Artificial">
           <div class="byom-header">
             <div class="byom-title">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                <path d="m12 3-1.9 5.8a2 2 0 0 1-1.3 1.3L3 12l5.8 1.9a2 2 0 0 1 1.3 1.3L12 21l1.9-5.8a2 2 0 0 1 1.3-1.3L21 12l-5.8-1.9a2 2 0 0 1-1.3-1.3Z"/>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
               </svg>
               <span>Consultar a la Inteligencia Artificial</span>
             </div>
@@ -330,9 +334,9 @@
           </div>
 
           <form class="byom-input-row" id="byomForm" onsubmit="event.preventDefault();">
-            <input type="text" id="modalAiQuestionInput" name="aiQuestion" autocomplete="off" placeholder="Ej: ¿Qué plazos estableció Alice para la entrega?…" aria-label="Pregunta sobre la reunión" />
+            <input type="text" id="modalAiQuestionInput" name="aiQuestion" autocomplete="off" placeholder="Ej: ¿Qué acuerdos se tomaron sobre el backend?..." aria-label="Pregunta sobre la reunión" />
             <button type="submit" id="modalAiAskBtn" class="btn-action-solid">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
                 <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
               </svg>
               <span>Consultar</span>
@@ -347,13 +351,13 @@
 
       <div class="modal-footer-actions">
         <button id="downloadMdBtn" class="btn-action-solid">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
             <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
           </svg>
           <span>Descargar Markdown (.md)</span>
         </button>
         <button id="copyNotesBtn" class="btn-action-outline">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
             <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
           </svg>
           <span>Copiar Minuta</span>

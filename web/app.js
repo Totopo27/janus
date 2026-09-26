@@ -242,18 +242,18 @@ function renderTurnCard(turn) {
   const srcLang = (turn.source_lang || turn.language || "es").toUpperCase();
   const tgtLang = (turn.target_lang || (srcLang === "ES" ? "EN" : "ES")).toUpperCase();
 
-  let speakerClass = "speaker-a";
+  let speakerClass = "speaker-1";
   let speakerLabel = turn.speaker_name || "Hablante 1";
 
   if (turn.speaker_id === "speaker_2" || turn.speaker_id === "remote") {
-    speakerClass = "speaker-b";
+    speakerClass = "speaker-2";
     speakerLabel = turn.speaker_name || "Hablante 2";
   } else if (turn.speaker_id === "speaker_1" || turn.speaker_id === "local") {
-    speakerClass = "speaker-a";
+    speakerClass = "speaker-1";
     speakerLabel = turn.speaker_name || "Hablante 1";
   } else {
     const num = parseInt(String(turn.speaker_id).replace("speaker_", ""), 10);
-    speakerClass = (!isNaN(num) && num % 2 === 0) ? "speaker-b" : "speaker-a";
+    speakerClass = (!isNaN(num) && num % 2 === 0) ? "speaker-2" : "speaker-1";
     speakerLabel = turn.speaker_name || `Hablante ${num || 1}`;
   }
 
@@ -269,11 +269,13 @@ function renderTurnCard(turn) {
 
   card.innerHTML = `
     <div class="turn-header">
-      <span style="font-weight: 600;">${speakerHeader}</span>
+      <span class="speaker-pill">${speakerHeader}</span>
       <time datetime="${new Date().toISOString()}">${timeStr}</time>
     </div>
-    <div class="turn-original">“${escapeHtml(turn.original_text)}”</div>
-    <div class="turn-translated">${arrowSvg} <span>${escapeHtml(turn.translated_text)}</span></div>
+    <div class="turn-content">
+      <div class="turn-original">${escapeHtml(turn.original_text)}</div>
+      <div class="turn-translation">${escapeHtml(turn.translated_text)}</div>
+    </div>
   `;
 
   feed.appendChild(card);
