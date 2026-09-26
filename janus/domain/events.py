@@ -18,6 +18,15 @@ class DomainEvent:
 
 
 @dataclass(frozen=True)
+class PipelineProgressEvent(DomainEvent):
+    session_id: str = ""
+    stage: str = ""  # "transcoding" | "diarization" | "transcribing" | "translating" | "synthesizing"
+    progress_percent: int = 0
+    message: str = ""
+    event_name: str = "PipelineProgress"
+
+
+@dataclass(frozen=True)
 class SpeechDetectedEvent(DomainEvent):
     session_id: str = ""
     speaker_id: str = ""

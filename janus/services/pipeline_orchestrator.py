@@ -12,6 +12,7 @@ from janus.domain.models import (
 )
 from janus.services.conversational_fusion_service import FusedTurn
 from janus.domain.events import (
+    PipelineProgressEvent,
     TranscriptionCompletedEvent,
     TranslationCompletedEvent,
     SynthesisCompletedEvent,
@@ -65,6 +66,7 @@ class PipelineOrchestrator:
         speaker_id: str,
         audio: AudioChunk,
         language: Optional[str] = None,
+        target_language: Optional[str] = None,
     ) -> Optional[ConversationTurn]:
         """
         Executes turn processing for a conversational turn.
@@ -81,12 +83,12 @@ class PipelineOrchestrator:
                 logger.info(f"[{session.session_id}] Silero VAD sliced multi-speaker audio into {len(sub_chunks)} turns.")
                 last_turn = None
                 for sub in sub_chunks:
-                    turn = await self._process_single_turn(session, speaker_id, sub, language)
+                    turn = await self._process_single_turn(session, speaker_id, sub, language, target_language)
                     if turn:
                         last_turn = turn
                 return last_turn
 
-        return await self._process_single_turn(session, speaker_id, audio, language)
+        return await self._process_single_turn(session, speaker_id, audio, language, target_language)
 
     async def _process_single_turn(
         self,
@@ -94,6 +96,7 @@ class PipelineOrchestrator:
         speaker_id: str,
         audio: AudioChunk,
         language: Optional[str] = None,
+        target_language: Optional[str] = None,
     ) -> Optional[ConversationTurn]:
         """
         Executes a single conversational turn from audio input to translated speech.
@@ -102,6 +105,17 @@ class PipelineOrchestrator:
             return None
 
         # 1. Voice Activity Detection (offloaded to thread to prevent loop blocking)
+        if self.broadcaster:
+            await self.broadcaster.broadcast_event(
+                session.session_id,
+                PipelineProgressEvent(
+                    session_id=session.session_id,
+                    stage="vad",
+                    progress_percent=15,
+                    message="Analizando actividad de voz...",
+                ),
+            )
+
         if self.vad:
             has_speech = await asyncio.to_thread(self.vad.contains_speech, audio)
             if not has_speech:
@@ -109,6 +123,17 @@ class PipelineOrchestrator:
                 return None
 
         # 2. Acoustic Speaker Diarization (offloaded to thread)
+        if self.broadcaster:
+            await self.broadcaster.broadcast_event(
+                session.session_id,
+                PipelineProgressEvent(
+                    session_id=session.session_id,
+                    stage="diarization",
+                    progress_percent=35,
+                    message="Diarizando hablantes y solapamientos...",
+                ),
+            )
+
         effective_speaker_id = speaker_id
         effective_speaker_name = None
         acoustic_hint = None
@@ -168,20 +193,33 @@ class PipelineOrchestrator:
             effective_speaker_name = current_speaker.name
 
         # 3. Automatic Speech Recognition (with optional explicit language conditioning)
+        if self.broadcaster:
+            await self.broadcaster.broadcast_event(
+                session.session_id,
+                PipelineProgressEvent(
+                    session_id=session.session_id,
+                    stage="transcribing",
+                    progress_percent=60,
+                    message="Transcribiendo audio fonético...",
+                ),
+            )
+
         effective_lang = language if language not in [None, "auto", ""] else None
         transcription = await asyncio.to_thread(self.stt.transcribe, audio=audio, language=effective_lang)
         if not transcription or not transcription.text.strip():
             logger.debug(f"[{session.session_id}] No speech recognized or silence in audio chunk.")
             return None
 
-        # Automatically determine source and target languages based on detected speech
+        # Determine source and target languages
         source_lang = transcription.language or "es"
-        if source_lang.startswith("es"):
-            target_lang = "en"
-        elif source_lang.startswith("en"):
-            target_lang = "es"
+
+        # Explicit target language chosen by the user or derived from counterpart
+        if target_language and target_language.strip():
+            target_lang = target_language.strip().lower()
+        elif counterpart and counterpart.native_language:
+            target_lang = counterpart.native_language
         else:
-            target_lang = "en"
+            target_lang = "en" if source_lang.startswith("es") else "es"
 
         logger.info(f"[{session.session_id}] Transcribed ({source_lang}) for '{effective_speaker_id}': '{transcription.text}'")
 
@@ -197,7 +235,18 @@ class PipelineOrchestrator:
                 ),
             )
 
-        # 3. Conversational Fusion or Machine Translation
+        # 4. Conversational Fusion or Machine Translation
+        if self.broadcaster:
+            await self.broadcaster.broadcast_event(
+                session.session_id,
+                PipelineProgressEvent(
+                    session_id=session.session_id,
+                    stage="translating",
+                    progress_percent=85,
+                    message="Traduciendo y fusionando diálogo...",
+                ),
+            )
+
         if self.fusion_service:
             fused_turns = await asyncio.to_thread(
                 self.fusion_service.fuse_and_translate,

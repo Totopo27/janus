@@ -146,13 +146,6 @@ header {
   font-family: var(--font-mono);
 }
 
-.brand-model-code {
-  font-size: 0.7rem;
-  color: var(--text-muted);
-  font-weight: 500;
-  letter-spacing: 0.08em;
-}
-
 .header-actions {
   display: flex;
   align-items: center;
@@ -326,7 +319,27 @@ header {
 .language-selector-group {
   display: flex;
   align-items: center;
-  gap: 0.5rem;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
+.lang-field-item {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+}
+
+.static-chip-badge {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--te-sunken);
+  color: var(--te-lcd-green);
+  border: 1px solid var(--te-bezel);
+  padding: 0.28rem 0.6rem;
+  border-radius: var(--radius-key);
 }
 
 .lang-select-label {
@@ -351,16 +364,20 @@ header {
   cursor: pointer;
 }
 
-/* Hardware Telemetry Screen (Monochrome OLED look) */
-.byom-telemetry-badge {
+/* Hardware Telemetry Screen & BYOM Engine Selector */
+.byom-selector-group {
   display: flex;
   align-items: center;
   gap: 0.5rem;
-  background: var(--te-sunken);
-  border: 1px solid var(--te-bezel);
-  padding: 0.28rem 0.65rem;
-  border-radius: var(--radius-key);
-  font-size: 0.68rem;
+}
+
+.byom-select-dropdown {
+  color: var(--te-amber);
+  border-color: var(--te-amber-dim);
+}
+
+.byom-select-dropdown:hover, .byom-select-dropdown:focus {
+  border-color: var(--te-amber);
 }
 
 .byom-dot {
@@ -368,17 +385,6 @@ header {
   height: 5px;
   border-radius: 50%;
   background: var(--te-amber);
-}
-
-.byom-label {
-  color: var(--text-muted);
-  text-transform: uppercase;
-  font-weight: 600;
-}
-
-.byom-engine {
-  color: var(--te-amber);
-  font-weight: 700;
 }
 
 .session-toggles {
@@ -495,6 +501,13 @@ header {
   user-select: none;
 }
 
+.panel-title-group {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+  flex-wrap: wrap;
+}
+
 .panel-title {
   display: flex;
   align-items: center;
@@ -504,6 +517,54 @@ header {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #FFF;
+}
+
+/* Green TE Technical Progress Bar alongside Title */
+.processing-meter-wrap {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  background: var(--te-sunken);
+  border: 1px solid var(--te-bezel);
+  padding: 0.25rem 0.55rem;
+  border-radius: var(--radius-key);
+  transition: opacity var(--te-transition);
+}
+
+.processing-meter-wrap.hidden {
+  display: none;
+}
+
+.meter-text {
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--te-lcd-green);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.meter-track {
+  width: 90px;
+  height: 6px;
+  background: var(--te-bezel);
+  border-radius: 1px;
+  overflow: hidden;
+}
+
+.meter-fill {
+  height: 100%;
+  width: 0%;
+  background: var(--te-lcd-green);
+  box-shadow: 0 0 6px var(--te-lcd-green);
+  transition: width 150ms ease-out;
+}
+
+.meter-percent {
+  font-size: 0.64rem;
+  font-weight: 700;
+  color: var(--te-lcd-green);
+  font-family: var(--font-mono);
+  min-width: 28px;
 }
 
 .section-badge {
@@ -691,6 +752,38 @@ header {
   box-shadow: 0 2px 0 #CCC;
 }
 
+/* Panic / Emergency Abort Stop Button (Hardware style) */
+.btn-abort {
+  font-family: var(--font-mono);
+  font-size: 0.76rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.65rem 0.95rem;
+  background: var(--te-plate);
+  color: #FF2222;
+  border: 1px solid #FF2222;
+  border-radius: var(--radius-key);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  box-shadow: 0 2px 0 #550000;
+  transition: all var(--te-transition);
+  user-select: none;
+}
+
+.btn-abort:hover {
+  background: rgba(255, 34, 34, 0.15);
+  border-color: #FF5555;
+  color: #FF5555;
+}
+
+.btn-abort:active {
+  transform: translateY(2px);
+  box-shadow: 0 0 0 #550000;
+}
+
 .record-icon-slot {
   display: flex;
   align-items: center;
@@ -774,7 +867,8 @@ header {
   display: flex;
   flex-direction: column;
   height: calc(100vh - 128px);
-  overflow-y: auto;
+  overflow-y: visible;
+  position: relative;
 }
 
 .companion-panel {
@@ -782,12 +876,103 @@ header {
   display: flex;
   flex-direction: column;
   gap: 1.25rem;
+  overflow-y: auto;
+  flex: 1;
 }
 
 .companion-top-bar {
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.companion-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.btn-ghost-compact {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.28rem 0.55rem;
+  background: var(--te-plate);
+  color: var(--text-secondary);
+  border: 1px solid var(--te-bezel);
+  border-radius: var(--radius-key);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  transition: all var(--te-transition);
+}
+
+.btn-ghost-compact:hover {
+  background: var(--te-bezel);
+  color: #FFF;
+  border-color: var(--te-bezel-active);
+}
+
+.btn-ghost-compact.btn-danger-hover:hover {
+  background: rgba(255, 34, 34, 0.15);
+  border-color: #FF5555;
+  color: #FF5555;
+}
+
+/* Export Dropdown Popover */
+.export-dropdown-wrapper {
+  position: relative;
+}
+
+.export-menu-popover {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--te-surface);
+  border: 1px solid var(--te-bezel-active);
+  border-radius: var(--radius-key);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.7);
+  display: flex;
+  flex-direction: column;
+  min-width: 170px;
+  z-index: 100;
+  overflow: hidden;
+}
+
+.export-menu-item {
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  background: transparent;
+  border: none;
+  padding: 0.5rem 0.75rem;
+  text-align: left;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  transition: all var(--te-transition);
+}
+
+.export-menu-item:hover {
+  background: var(--te-bezel);
+  color: #FFF;
+}
+
+.ext-badge {
+  font-size: 0.6rem;
+  font-weight: 700;
+  background: var(--te-sunken);
+  color: var(--te-orange);
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--radius-key);
+  border: 1px solid var(--te-bezel);
 }
 
 .companion-heading {
@@ -853,13 +1038,53 @@ header {
   background: var(--te-amber-dim);
 }
 
-/* Topic Callout Box */
+/* Topic Callout & Tags Box */
 .topic-callout {
   background: var(--te-sunken);
   border: 1px solid var(--te-bezel);
   border-left: 3px solid var(--te-orange);
   padding: 0.65rem 0.85rem;
   border-radius: var(--radius-key);
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.topic-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.tags-editor-inline {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  background: var(--te-surface);
+  border: 1px solid var(--te-bezel);
+  padding: 0.15rem 0.4rem;
+  border-radius: var(--radius-key);
+}
+
+.tags-icon {
+  font-size: 0.68rem;
+  color: var(--te-orange);
+  font-weight: 700;
+}
+
+.input-tags-inline {
+  background: transparent;
+  border: none;
+  font-family: var(--font-mono);
+  font-size: 0.66rem;
+  color: #FFF;
+  outline: none;
+  width: 120px;
+}
+
+.input-tags-inline::placeholder {
+  color: var(--text-muted);
 }
 
 .callout-eyebrow {

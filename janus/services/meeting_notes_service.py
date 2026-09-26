@@ -195,3 +195,66 @@ class MeetingNotesService:
 
         lines.append("")
         return "\n".join(lines)
+
+    def export_as_txt(self, meeting_id: str) -> str:
+        """
+        Exports the meeting notes, action items, and bilingual transcript
+        into a clean, readable plain text (.txt) file.
+        """
+        meeting = self.repo.get_meeting(meeting_id)
+        if not meeting:
+            return "Reunión no encontrada\n"
+
+        created_dt = datetime.fromtimestamp(meeting.created_at, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S UTC")
+        status_str = "Completada" if meeting.status == "completed" else "En Progreso"
+
+        lines = [
+            f"MINUTA DE REUNIÓN: {meeting.title.upper()}",
+            "=" * 60,
+            f"Fecha y Hora:  {created_dt}",
+            f"Estado:        {status_str}",
+            f"Participantes: {meeting.speaker_a.name} ({meeting.speaker_a.native_language}) / {meeting.speaker_b.name} ({meeting.speaker_b.native_language})",
+            "-" * 60,
+            "",
+            "RESUMEN EJECUTIVO:",
+            meeting.summary.executive_summary if meeting.summary else "Pendiente de finalización.",
+            "",
+            "PUNTOS CLAVE:",
+        ]
+
+        if meeting.summary and meeting.summary.key_points:
+            for pt in meeting.summary.key_points:
+                lines.append(f"  • {pt}")
+        else:
+            lines.append("  • No se registraron puntos clave.")
+
+        lines.extend([
+            "",
+            "COMPROMISOS Y TAREAS (ACTION ITEMS):",
+        ])
+
+        if meeting.summary and meeting.summary.action_items:
+            for item in meeting.summary.action_items:
+                status_mark = "[X]" if item.completed else "[ ]"
+                due = f" (Plazo: {item.due_hint})" if item.due_hint else ""
+                lines.append(f"  {status_mark} {item.assignee}: {item.task}{due}")
+        else:
+            lines.append("  • No hay tareas registradas.")
+
+        lines.extend([
+            "",
+            "-" * 60,
+            "TRANSCRIPCIÓN Y DIÁLOGOS:",
+            "-" * 60,
+        ])
+
+        for t in meeting.turns:
+            speaker = meeting.get_speaker(t.speaker_id)
+            speaker_name = speaker.name if speaker else t.speaker_id
+            time_str = datetime.fromtimestamp(t.created_at, tz=timezone.utc).strftime("%H:%M:%S")
+            lines.append(f"[{time_str}] {speaker_name}:")
+            lines.append(f"  Original:    {t.original_transcription.text}")
+            lines.append(f"  Traducción:  {t.translation.translated_text}")
+            lines.append("")
+
+        return "\n".join(lines)

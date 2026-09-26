@@ -22,6 +22,7 @@ const audioPlaybackToggle = document.getElementById("audioPlaybackToggle");
 const clearFeedBtn = document.getElementById("clearFeedBtn");
 const finalizeBtn = document.getElementById("finalizeBtn");
 const inputLanguageSelect = document.getElementById("inputLanguageSelect");
+const targetLanguageSelect = document.getElementById("targetLanguageSelect");
 const vadTelemetryBar = document.getElementById("vadTelemetryBar");
 const vadStatusDot = document.getElementById("vadStatusDot");
 const vadStatusText = document.getElementById("vadStatusText");
@@ -211,6 +212,12 @@ function handleIncomingEvent(payload) {
     return;
   }
 
+  if (payload.event_name === "PipelineProgress") {
+    const prog = payload.data || payload;
+    updateRealProgress(prog.progress_percent, prog.stage, prog.message);
+    return;
+  }
+
   if (payload.event_name === "LiveNotesUpdated") {
     renderLiveNotes(payload.data || payload);
     return;
@@ -219,6 +226,7 @@ function handleIncomingEvent(payload) {
   if (payload.event_name === "TurnCompleted") {
     const turnData = payload.data;
     renderTurnCard(turnData);
+    completeProcessingProgress();
   }
 
 }
@@ -280,6 +288,7 @@ function renderTurnCard(turn) {
 
   feed.appendChild(card);
   feed.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
+  completeProcessingProgress();
 }
 
 function playSynthesizedAudio(base64Data, format) {
@@ -430,6 +439,57 @@ function sliceAndDispatchTurn() {
   completedRecorder.stop();
 }
 
+// Real-time Pipeline Progress Meter Logic (driven by backend Domain Events)
+const processingMeter = document.getElementById("processingMeter");
+const processingProgressBar = document.getElementById("processingProgressBar");
+const processingPercentText = document.getElementById("processingPercentText");
+const processingStatusText = document.getElementById("processingStatusText");
+
+function showProcessingProgress() {
+  if (!processingMeter) return;
+  processingMeter.classList.remove("hidden");
+  if (processingProgressBar) processingProgressBar.style.width = "10%";
+  if (processingPercentText) processingPercentText.textContent = "10%";
+  if (processingStatusText) processingStatusText.textContent = "INGESTA";
+}
+
+function updateRealProgress(percent, stage, message) {
+  if (!processingMeter) return;
+  processingMeter.classList.remove("hidden");
+  const clamped = Math.max(5, Math.min(percent, 98));
+  if (processingProgressBar) processingProgressBar.style.width = `${clamped}%`;
+  if (processingPercentText) processingPercentText.textContent = `${clamped}%`;
+  if (processingStatusText) {
+    const stageNames = {
+      vad: "VAD SILENCIO",
+      diarization: "DIARIZACIÓN",
+      transcribing: "WHISPER STT",
+      translating: "TRADUCCIÓN",
+      synthesizing: "VOZ TTS",
+    };
+    processingStatusText.textContent = stageNames[stage] || stage.toUpperCase() || "PROCESANDO";
+  }
+}
+
+function completeProcessingProgress() {
+  if (!processingMeter) return;
+  if (processingProgressBar) processingProgressBar.style.width = "100%";
+  if (processingPercentText) processingPercentText.textContent = "100%";
+  if (processingStatusText) processingStatusText.textContent = "LISTO";
+  setTimeout(() => {
+    hideProcessingProgress();
+  }, 400);
+}
+
+function hideProcessingProgress() {
+  if (processingMeter) {
+    processingMeter.classList.add("hidden");
+  }
+  if (processingProgressBar) processingProgressBar.style.width = "0%";
+  if (processingPercentText) processingPercentText.textContent = "0%";
+  if (processingStatusText) processingStatusText.textContent = "IDLE";
+}
+
 async function sendAudioBlobToServer(blob, mimeType) {
   try {
     if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
@@ -447,15 +507,19 @@ async function sendAudioBlobToServer(blob, mimeType) {
     }
     const base64Audio = btoa(binary);
     const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "auto";
+    const selectedTargetLang = targetLanguageSelect ? targetLanguageSelect.value : "es";
 
-    console.log(`[AudioCapture] Despachando turno (${blob.size} bytes, lang=${selectedLang})...`);
+    console.log(`[AudioCapture] Despachando turno (${blob.size} bytes, src=${selectedLang}, tgt=${selectedTargetLang})...`);
+    showProcessingProgress();
     localMicSocket.send(JSON.stringify({
       audio_base64: base64Audio,
       mime_type: mimeType,
       language: selectedLang,
+      target_language: selectedTargetLang,
     }));
   } catch (err) {
     console.error("[AudioCapture] Error enviando audio al servidor:", err);
+    hideProcessingProgress();
   }
 }
 
@@ -688,6 +752,65 @@ function stopLocalRecording() {
   console.log("[AudioCapture] Captura detenida y recursos liberados.");
 }
 
+// Panic / Emergency Kill Function: stops audio, discards memory, resets progress meter, closes channels
+function abortAudioCapture() {
+  console.warn("[AudioCapture] ¡KILL/ABORT ACCIONADO! Cancelando transcripción y liberando recursos...");
+
+  // 1. Force hide and reset progress meter immediately
+  hideProcessingProgress();
+
+  // 2. Cancel any animation/meter loops
+  if (vadAnimationId) {
+    cancelAnimationFrame(vadAnimationId);
+    vadAnimationId = null;
+  }
+
+  isLocalRecording = false;
+
+  // 3. Discard recorder and chunks without triggering onstop network dispatch
+  if (vadCurrentRecorder) {
+    vadCurrentRecorder.ondataavailable = null;
+    vadCurrentRecorder.onstop = null;
+    try {
+      if (vadCurrentRecorder.state !== "inactive") {
+        vadCurrentRecorder.stop();
+      }
+    } catch (e) {}
+    vadCurrentRecorder = null;
+  }
+  vadCurrentChunks = [];
+
+  // 4. Stop local mic stream tracks
+  if (vadStream) {
+    vadStream.getTracks().forEach((track) => track.stop());
+    vadStream = null;
+  }
+
+  // 5. Close audio context immediately
+  if (vadAudioContext && vadAudioContext.state !== "closed") {
+    vadAudioContext.close().catch(() => {});
+    vadAudioContext = null;
+  }
+
+  // 6. Also stop remote tab stream if active
+  stopMeetAudioCapture();
+
+  // 7. Reset UI elements
+  recordBtn.classList.remove("recording");
+  const isHandsFree = vadModeToggle && vadModeToggle.checked;
+  if (recordText) {
+    recordText.textContent = isHandsFree ? "Iniciar Grabación (Manos Libres)" : "Grabar Turno (Manual)";
+  }
+  recordBtn.setAttribute("aria-label", "Iniciar grabación de audio");
+  updateVadUI("IDLE", 0);
+}
+}
+
+const abortBtn = document.getElementById("abortBtn");
+if (abortBtn) {
+  abortBtn.addEventListener("click", abortAudioCapture);
+}
+
 // Toggle recording on button click
 if (recordBtn) {
   recordBtn.addEventListener("click", () => {
@@ -786,10 +909,12 @@ async function startMeetAudioCapture() {
           new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
         );
         const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "auto";
+        const selectedTargetLang = targetLanguageSelect ? targetLanguageSelect.value : "es";
         if (meetAudioSocket && meetAudioSocket.readyState === WebSocket.OPEN) {
           meetAudioSocket.send(JSON.stringify({
             audio_base64: base64Audio,
             language: selectedLang,
+            target_language: selectedTargetLang,
           }));
         }
       }
@@ -1010,34 +1135,55 @@ if (copyNotesBtn) {
   });
 }
 
-// 10. BYOM: AI Chat with Meeting & Inference Badge Sync
-const byomEngineName = document.getElementById("byomEngineName");
+// 10. BYOM: AI Chat with Meeting & Dynamic Inference Engine Sync
+const byomEngineSelect = document.getElementById("byomEngineSelect");
 
-function updateByomBadge(provider) {
-  if (!byomEngineName) return;
-  if (provider === "gemini") {
-    byomEngineName.textContent = "Google Gemini (Cloud)";
-  } else {
-    byomEngineName.textContent = "Ollama Local (qwen2.5:3b)";
+async function applyLlmProvider(provider) {
+  if (byomEngineSelect && byomEngineSelect.value !== provider) {
+    byomEngineSelect.value = provider;
+  }
+  if (modalAiProvider && modalAiProvider.value !== provider) {
+    modalAiProvider.value = provider;
+  }
+  try {
+    const res = await fetch("/api/system/llm-config", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ provider })
+    });
+    if (res.ok) {
+      console.log(`[BYOM] Motor LLM actualizado dinámicamente a: ${provider}`);
+    }
+  } catch (e) {
+    console.warn("[BYOM] Error conmutando motor LLM:", e);
   }
 }
 
-if (modalAiProvider) {
-  updateByomBadge(modalAiProvider.value);
-  modalAiProvider.addEventListener("change", async () => {
-    const provider = modalAiProvider.value;
-    updateByomBadge(provider);
-    try {
-      await fetch("/api/system/llm-config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ provider })
-      });
-    } catch (e) {
-      console.warn("Could not switch LLM provider:", e);
-    }
+if (byomEngineSelect) {
+  byomEngineSelect.addEventListener("change", () => {
+    applyLlmProvider(byomEngineSelect.value);
   });
 }
+
+if (modalAiProvider) {
+  modalAiProvider.addEventListener("change", () => {
+    applyLlmProvider(modalAiProvider.value);
+  });
+}
+
+// Fetch initial LLM provider state on load
+(async () => {
+  try {
+    const res = await fetch("/api/system/llm-config");
+    if (res.ok) {
+      const data = await res.json();
+      if (data.provider) {
+        if (byomEngineSelect) byomEngineSelect.value = data.provider;
+        if (modalAiProvider) modalAiProvider.value = data.provider;
+      }
+    }
+  } catch (e) {}
+})();
 
 async function askAiAboutMeeting() {
   const question = modalAiQuestionInput.value.trim();
@@ -1169,6 +1315,82 @@ if (closeCatchUpBtn) {
   closeCatchUpBtn.addEventListener("click", () => {
     catchUpBox.style.display = "none";
     if (catchUpBtn) catchUpBtn.focus();
+  });
+}
+
+// Export Dropdown Menu & Formats Controller
+const exportMenuTriggerBtn = document.getElementById("exportMenuTriggerBtn");
+const exportDropdownMenu = document.getElementById("exportDropdownMenu");
+const exportMdBtn = document.getElementById("exportMdBtn");
+const exportTxtBtn = document.getElementById("exportTxtBtn");
+const exportJsonBtn = document.getElementById("exportJsonBtn");
+const clearNotesBtn = document.getElementById("clearNotesBtn");
+
+if (exportMenuTriggerBtn && exportDropdownMenu) {
+  exportMenuTriggerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    const isVisible = exportDropdownMenu.style.display === "flex";
+    exportDropdownMenu.style.display = isVisible ? "none" : "flex";
+    exportMenuTriggerBtn.setAttribute("aria-expanded", !isVisible);
+  });
+
+  document.addEventListener("click", (e) => {
+    if (!exportMenuTriggerBtn.contains(e.target) && !exportDropdownMenu.contains(e.target)) {
+      exportDropdownMenu.style.display = "none";
+      exportMenuTriggerBtn.setAttribute("aria-expanded", "false");
+    }
+  });
+}
+
+if (exportMdBtn) {
+  exportMdBtn.addEventListener("click", () => {
+    if (exportDropdownMenu) exportDropdownMenu.style.display = "none";
+    window.location.href = `/api/meetings/${SESSION_ID}/notes?notes_format=markdown`;
+  });
+}
+
+if (exportTxtBtn) {
+  exportTxtBtn.addEventListener("click", () => {
+    if (exportDropdownMenu) exportDropdownMenu.style.display = "none";
+    window.location.href = `/api/meetings/${SESSION_ID}/notes?notes_format=txt`;
+  });
+}
+
+if (exportJsonBtn) {
+  exportJsonBtn.addEventListener("click", () => {
+    if (exportDropdownMenu) exportDropdownMenu.style.display = "none";
+    window.location.href = `/api/meetings/${SESSION_ID}`;
+  });
+}
+
+// Meeting Tags / Categories Handler
+const meetingTagsInput = document.getElementById("meetingTagsInput");
+
+if (meetingTagsInput) {
+  meetingTagsInput.addEventListener("change", async () => {
+    const topicKey = meetingTagsInput.value.trim();
+    try {
+      await fetch(`/api/meetings/${SESSION_ID}/topic-key?topic_key=${encodeURIComponent(topicKey)}`, {
+        method: "PUT"
+      });
+      console.log(`[MeetingTags] Etiquetas actualizadas a: "${topicKey}"`);
+    } catch (e) {
+      console.warn("Could not save meeting tags:", e);
+    }
+  });
+}
+
+if (clearNotesBtn) {
+  clearNotesBtn.addEventListener("click", () => {
+    if (liveTopicText) liveTopicText.textContent = "Inicio de la reunión";
+    if (liveTakeawaysList) {
+      liveTakeawaysList.innerHTML = `<li class="empty-hint">Notas limpiadas. Escuchando nuevas intervenciones…</li>`;
+    }
+    if (liveActionItemsList) {
+      liveActionItemsList.innerHTML = `<li class="empty-hint">Aún no se han detectado compromisos o tareas explícitas.</li>`;
+    }
+    if (catchUpBox) catchUpBox.style.display = "none";
+    console.log("[LiveNotes] Notas de reunión locales reiniciadas.");
   });
 }
 

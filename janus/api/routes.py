@@ -314,6 +314,18 @@ def create_api_router(
         meetings = meeting_repo.list_meetings()
         return [_build_meeting_response(m) for m in meetings]
 
+    @router.put("/meetings/{meeting_id}/topic-key", response_model=MeetingResponse)
+    def update_meeting_topic_key(meeting_id: str, topic_key: str):
+        """Updates the hierarchical topic key / tags for an active meeting."""
+        if not meeting_repo:
+            raise HTTPException(status_code=503, detail="Storage repository not configured")
+        m = meeting_repo.get_meeting(meeting_id)
+        if not m:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+        m.topic_key = topic_key.strip() if topic_key else None
+        meeting_repo.save_meeting(m)
+        return _build_meeting_response(m)
+
     @router.get("/meetings/{meeting_id}", response_model=MeetingResponse)
     def get_meeting(meeting_id: str):
         if not meeting_repo:
@@ -340,9 +352,9 @@ def create_api_router(
         return _build_meeting_response(updated)
 
     @router.get("/meetings/{meeting_id}/notes")
-    def get_meeting_notes(meeting_id: str, notes_format: Literal["json", "markdown", "md"] = "json"):
+    def get_meeting_notes(meeting_id: str, notes_format: Literal["json", "markdown", "md", "txt", "text"] = "json"):
         """
-        Retrieves the meeting notes in JSON or raw GitHub Flavored Markdown format.
+        Retrieves the meeting notes in JSON, raw Markdown (.md) or Plain Text (.txt) format.
         """
         if not notes_service or not meeting_repo:
             raise HTTPException(status_code=503, detail="Meeting notes service not configured")
@@ -357,6 +369,14 @@ def create_api_router(
                 content=markdown,
                 media_type="text/markdown",
                 headers={"Content-Disposition": f'attachment; filename="{meeting_id}_notes.md"'}
+            )
+
+        if notes_format in ("txt", "text"):
+            plain_text = notes_service.export_as_txt(meeting_id)
+            return Response(
+                content=plain_text,
+                media_type="text/plain; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{meeting_id}_notes.txt"'}
             )
 
         if not m.summary:

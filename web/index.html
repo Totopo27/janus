@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Janus // Field S2ST-01</title>
+  <title>Janus</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
@@ -25,7 +25,6 @@
       </div>
       <div class="brand-title-wrap">
         <h1 class="brand-title">JANUS</h1>
-        <span class="brand-model-code">// FIELD S2ST-01</span>
       </div>
     </div>
 
@@ -87,25 +86,49 @@
 
     <!-- Session Strip: Language, BYOM Engine & Hardware Toggles -->
     <section class="session-strip" aria-label="Controles de la sesión y participantes">
-      <div class="language-selector-group" role="region" aria-label="Idioma de entrada">
-        <label for="inputLanguageSelect" class="lang-select-label">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-            <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/>
-          </svg>
-          <span>Entrada:</span>
-        </label>
-        <select id="inputLanguageSelect" class="lang-select-input" aria-label="Seleccionar idioma de entrada para transcripción">
-          <option value="auto" selected>Auto-Detección Bilingüe (ES / EN)</option>
-          <option value="es">Español (ES) - Forzado</option>
-          <option value="en">English (EN) - Forzado</option>
-        </select>
+      <!-- Language Configuration (Auto-detect Audio Input + Target Output/Transcription Language) -->
+      <div class="language-selector-group" role="region" aria-label="Configuración de idiomas">
+        <div class="lang-field-item">
+          <label class="lang-select-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/>
+            </svg>
+            <span>Audio Entrada:</span>
+          </label>
+          <span class="static-chip-badge" title="Whisper detecta automáticamente el idioma hablado de cualquier participante">Auto-Detección</span>
+        </div>
+
+        <div class="lang-field-item">
+          <label for="targetLanguageSelect" class="lang-select-label">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+              <circle cx="12" cy="12" r="10"/><path d="M2 12h20"/>
+            </svg>
+            <span>Salida / Traducción:</span>
+          </label>
+          <select id="targetLanguageSelect" class="lang-select-input" aria-label="Seleccionar idioma objetivo para la transcripción y traducción">
+            <option value="es" selected>Español (ES)</option>
+            <option value="en">English (EN)</option>
+            <option value="pt">Português (PT)</option>
+            <option value="fr">Français (FR)</option>
+            <option value="de">Deutsch (DE)</option>
+            <option value="it">Italiano (IT)</option>
+            <option value="ja">日本語 (JA)</option>
+            <option value="zh">中文 (ZH)</option>
+            <option value="ru">Русский (RU)</option>
+          </select>
+        </div>
       </div>
 
-      <!-- TE Hardware Telemetry Screen -->
-      <div class="byom-telemetry-badge" id="byomTelemetryBadge" title="Motor LLM activo para síntesis y notas">
-        <span class="byom-dot" aria-hidden="true"></span>
-        <span class="byom-label">Motor Inferencia:</span>
-        <span class="byom-engine" id="byomEngineName">Google Gemini Flash</span>
+      <!-- TE Hardware BYOM Engine Selector -->
+      <div class="byom-selector-group" role="region" aria-label="Motor de inferencia LLM">
+        <label for="byomEngineSelect" class="lang-select-label">
+          <span class="byom-dot" aria-hidden="true"></span>
+          <span>Motor Inferencia:</span>
+        </label>
+        <select id="byomEngineSelect" class="lang-select-input byom-select-dropdown" aria-label="Seleccionar motor de inferencia LLM">
+          <option value="ollama" selected>Ollama Local (qwen2.5:3b)</option>
+          <option value="gemini">Google Gemini Flash (Cloud)</option>
+        </select>
       </div>
 
       <div class="session-toggles">
@@ -129,11 +152,20 @@
       <section class="teleprompter-column" aria-label="Teleprompter y transcripción en vivo">
         <div class="card-panel teleprompter-panel">
           <div class="panel-header">
-            <div class="panel-title">
-              <span class="section-badge">STREAM</span>
-              <span>Transcripción & Traducción Simultánea</span>
+            <div class="panel-title-group">
+              <div class="panel-title">
+                <span class="section-badge">STREAM</span>
+                <span>Transcripción & Traducción Simultánea</span>
+              </div>
+              <!-- Green Progress Bar alongside Title -->
+              <div id="processingMeter" class="processing-meter-wrap hidden" aria-live="polite">
+                <span class="meter-text" id="processingStatusText">PROCESANDO</span>
+                <div class="meter-track">
+                  <div class="meter-fill" id="processingProgressBar"></div>
+                </div>
+                <span class="meter-percent" id="processingPercentText">0%</span>
+              </div>
             </div>
-            <div id="latencyDisplay" class="latency-chip" aria-label="Métrica de latencia">NEMOTRON-3 ONNX // ~150ms</div>
           </div>
 
           <div id="feed" class="feed-container" role="region" aria-live="polite" aria-atomic="false" aria-label="Flujo de transcripción y traducción">
@@ -158,6 +190,15 @@
               </svg>
             </span>
             <span id="recordText" class="record-label">Grabar Turno</span>
+          </button>
+
+          <!-- Panic / Emergency Abort (Kill Switch) Button -->
+          <button id="abortBtn" class="btn-abort" title="Abortar y descartar audio inmediatamente sin procesar" aria-label="Abortar y descartar captura">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+              <line x1="18" y1="6" x2="6" y2="18"/>
+              <line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+            <span>ABORT</span>
           </button>
 
           <!-- Hardware Segmented VU Meter -->
@@ -199,17 +240,56 @@
               </div>
             </div>
 
-            <button id="catchUpBtn" class="btn-catchup" title="Sintetizar lo ocurrido en los últimos minutos" aria-label="Ponerse al día con resumen de los últimos minutos">
-              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
-                <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
-              </svg>
-              <span>Catch-Up</span>
-            </button>
+            <div class="companion-top-actions">
+              <!-- Export Dropdown Menu -->
+              <div class="export-dropdown-wrapper">
+                <button id="exportMenuTriggerBtn" class="btn-ghost-compact" aria-haspopup="true" aria-expanded="false" title="Exportar minuta y transcripción">
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                  <span>Exportar ▾</span>
+                </button>
+                <div id="exportDropdownMenu" class="export-menu-popover" style="display: none;" role="menu">
+                  <button class="export-menu-item" id="exportMdBtn" role="menuitem">
+                    <span class="ext-badge">.MD</span>
+                    <span>Markdown (GitHub)</span>
+                  </button>
+                  <button class="export-menu-item" id="exportTxtBtn" role="menuitem">
+                    <span class="ext-badge">.TXT</span>
+                    <span>Texto Plano (Universal)</span>
+                  </button>
+                  <button class="export-menu-item" id="exportJsonBtn" role="menuitem">
+                    <span class="ext-badge">.JSON</span>
+                    <span>Datos Crudos (API)</span>
+                  </button>
+                </div>
+              </div>
+
+              <button id="clearNotesBtn" class="btn-ghost-compact btn-danger-hover" title="Limpiar notas y tareas detectadas" aria-label="Limpiar notas de la sesión">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <polyline points="3 6 5 6 21 6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/>
+                </svg>
+                <span>Limpiar</span>
+              </button>
+
+              <button id="catchUpBtn" class="btn-catchup" title="Sintetizar lo ocurrido en los últimos minutos" aria-label="Ponerse al día con resumen de los últimos minutos">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+                </svg>
+                <span>Catch-Up</span>
+              </button>
+            </div>
           </div>
 
-          <!-- Current Topic Banner -->
+          <!-- Current Topic & Category Tags Banner -->
           <div class="topic-callout" role="status">
-            <div class="callout-eyebrow">Tema Actual</div>
+            <div class="topic-header-flex">
+              <div class="callout-eyebrow">Tema Actual</div>
+              <div class="tags-editor-inline">
+                <span class="tags-icon" aria-hidden="true">#</span>
+                <input type="text" id="meetingTagsInput" class="input-tags-inline" placeholder="tag1, tag2..." title="Categorizar reunión con etiquetas para búsqueda (FTS5)" aria-label="Etiquetas o categorías de la reunión" />
+              </div>
+            </div>
             <div id="liveTopicText" class="topic-title" aria-live="polite">Inicio de la reunión</div>
           </div>
 

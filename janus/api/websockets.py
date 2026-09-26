@@ -76,6 +76,7 @@ def create_websocket_router(
                 mime_type = "audio/webm"
 
                 requested_lang = None
+                target_lang = None
                 if "bytes" in message and message["bytes"]:
                     audio_bytes = message["bytes"]
                     logger.info(f"[{session_id}:{speaker_id}] Received raw binary audio chunk ({len(audio_bytes)} bytes)")
@@ -86,7 +87,8 @@ def create_websocket_router(
                             audio_bytes = base64.b64decode(parsed["audio_base64"])
                             mime_type = parsed.get("mime_type", mime_type)
                             requested_lang = parsed.get("language", None)
-                            logger.info(f"[{session_id}:{speaker_id}] Received base64 audio chunk ({len(audio_bytes)} bytes decoded, lang={requested_lang})")
+                            target_lang = parsed.get("target_language", None)
+                            logger.info(f"[{session_id}:{speaker_id}] Received base64 audio chunk ({len(audio_bytes)} bytes, src={requested_lang}, tgt={target_lang})")
                         else:
                             logger.warning(f"[{session_id}:{speaker_id}] JSON message missing 'audio_base64' key: {list(parsed.keys())}")
                     except Exception as pe:
@@ -104,6 +106,7 @@ def create_websocket_router(
                     speaker_id=speaker_id,
                     audio=chunk,
                     language=requested_lang,
+                    target_language=target_lang,
                 )
 
                 if turn:
