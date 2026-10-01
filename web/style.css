@@ -1,48 +1,60 @@
-/* Janus // TE-01 Field Edition Design System
-   Inspired by Teenage Engineering (TP-7 / OP-1) meets Otter.ai Studio
-   Hardware Precision • Monospace Data Grid • Safety Orange Accent (#FF4400)
-   Tactile Aluminum & Matte Charcoal Surfaces • Zero Cliché Shadows
+/* Janus // TE-01 & Studio Teleprompter Design System
+   Inspired by Teenage Engineering (TP-7 / OP-1) meets Linear / Supabase Dark HUD
+   Hardware Precision • High Contrast Monospace Telemetry • Studio On-Air Signalling
+   WCAG AAA Reading Hierarchy • Zero-Lag GPU Transitions • Emil Kowalski Restraint
 */
 
 :root {
-  /* --- TE-01 Chassis & Anodized Metal Surfaces --- */
-  --te-chassis: #121314;       /* Main dark industrial chassis */
-  --te-surface: #181A1B;       /* Secondary recessed plate */
-  --te-plate: #222527;         /* Module cards & faceplates */
-  --te-bezel: #2D3135;         /* Hardware borders & bevels */
-  --te-bezel-active: #40464C;  /* Highlit borders */
-  --te-sunken: #0B0C0D;        /* Screen wells & sunken displays */
+  /* --- STUDIO CHASSIS & TECHNICAL SURFACES (Linear / Supabase Dark DNA) --- */
+  --te-chassis: #090A0B;       /* Pure studio off-black base */
+  --te-surface: #111315;       /* Elevated hardware plate */
+  --te-plate: #181B1E;         /* Cards and structured containers */
+  --te-bezel: #262A2E;         /* Sub-pixel precision hairline border */
+  --te-bezel-active: #3E444B;  /* Focused / Active module stroke */
+  --te-sunken: #050607;        /* Ultra-dark recessed well for high-contrast reading */
+  --te-glass-edge: inset 0 1px 0 rgba(255, 255, 255, 0.06);
 
-  /* --- Teenage Engineering Color Palette --- */
-  --te-orange: #FF4400;        /* Signature Emergency / Record Orange */
+  /* --- FUNCTIONAL STUDIO SIGNALLING (Traffic Light & Hardware Accents) --- */
+  --te-orange: #FF4400;        /* Push-key Record / Action Orange */
   --te-orange-dim: rgba(255, 68, 0, 0.15);
   --te-orange-bright: #FF5A1A;
   
-  --te-amber: #FFAA00;         /* Caution / VU Meter Peak / Secondary */
-  --te-amber-dim: rgba(255, 170, 0, 0.15);
+  --te-amber: #F59E0B;         /* Caution / Live Pipeline Ingestion / Inferencing */
+  --te-amber-dim: rgba(245, 158, 11, 0.15);
 
-  --te-lcd-green: #33FF77;     /* Technical LCD matrix green */
-  --te-lcd-dim: rgba(51, 255, 119, 0.12);
+  --te-lcd-green: #10B981;     /* Studio On-Air / Active VAD Speech Detection */
+  --te-lcd-dim: rgba(16, 185, 129, 0.14);
 
-  --te-blue: #00AAFF;          /* Speaker 2 / Remote Channel */
+  --te-blue: #3B82F6;          /* Interlocutor / Remote Speaker 2 */
+  --te-blue-dim: rgba(59, 130, 246, 0.14);
 
-  /* --- Industrial Neutral Typography --- */
-  --text-primary: #EAEBED;     /* High contrast etched text */
-  --text-secondary: #9FA4A8;   /* Silk-screened markings */
-  --text-muted: #5E656B;       /* Technical metadata / inactive pins */
-  --text-dark: #0B0C0D;        /* Inverted text on orange buttons */
+  --te-purple-lock: #6366F1;   /* Half-Duplex Acoustic Isolation Lock */
+  --te-purple-dim: rgba(99, 102, 241, 0.16);
 
-  /* --- Hardware Geometry --- */
-  --radius-chassis: 3px;       /* Sharp, milled-aluminum corner radius */
-  --radius-key: 2px;           /* Mechanical switch / key cap radius */
-  --radius-pill: 12px;
+  /* --- WCAG AAA HIGH-CONTRAST EDITORIAL TYPOGRAPHY --- */
+  --text-primary: #F4F5F7;     /* High-contrast crisp text (WCAG AAA against sunken/surface) */
+  --text-secondary: #CBD2D9;   /* Supporting translation text */
+  --text-muted: #7E868F;       /* Technical metadata / hairline markings */
+  --text-dark: #050607;        /* Inverted text on high-chroma buttons */
 
-  /* --- Typography Stacks --- */
+  /* --- HARDWARE GEOMETRY --- */
+  --radius-chassis: 4px;       /* Milled aluminum chamfer */
+  --radius-key: 3px;           /* Mechanical switch / key cap radius */
+  --radius-pill: 9999px;
+
+  /* --- TYPOGRAPHY STACKS --- */
   --font-mono: "JetBrains Mono", "SF Mono", "Consolas", monospace;
   --font-ui: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 
-  /* --- Transitions --- */
-  --te-transition: 120ms cubic-bezier(0.2, 0, 0, 1);
+  /* --- TELEPROMPTER READABILITY SCALE (Interactive Stepper) --- */
+  --teleprompter-scale: 1.15;
+  --font-size-original: calc(1.05rem * var(--teleprompter-scale));
+  --font-size-translated: calc(0.95rem * var(--teleprompter-scale));
+  --leading-teleprompter: 1.58;
+
+  /* --- ZERO-LAG EMIL KOWALSKI TRANSITIONS (80-120ms max) --- */
+  --te-transition: 90ms cubic-bezier(0.16, 1, 0.3, 1);
+  --te-transition-snap: 60ms linear;
 }
 
 * {
@@ -134,8 +146,8 @@ header {
 
 .brand-title-wrap {
   display: flex;
-  align-items: baseline;
-  gap: 0.5rem;
+  align-items: center;
+  gap: 0.65rem;
 }
 
 .brand-title {
@@ -144,6 +156,102 @@ header {
   letter-spacing: 0.05em;
   color: #FFF;
   font-family: var(--font-mono);
+}
+
+.teleprompter-mode-chip {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: var(--te-plate);
+  color: var(--text-muted);
+  border: 1px solid var(--te-bezel);
+  padding: 0.15rem 0.45rem;
+  border-radius: var(--radius-key);
+}
+
+/* Studio HUD Center Traffic Light (ON-AIR / INFERENCIA / TTS LOCK) */
+.studio-hud-center {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.studio-on-air-badge {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.28rem 0.75rem;
+  background: var(--te-sunken);
+  border: 1px solid var(--te-bezel);
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  transition: all var(--te-transition);
+  box-shadow: var(--te-glass-edge);
+}
+
+.hud-status-glyph {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+  background: var(--text-muted);
+  transition: background-color var(--te-transition), box-shadow var(--te-transition);
+}
+
+.hud-latency-counter {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+  border-left: 1px solid var(--te-bezel);
+  padding-left: 0.45rem;
+}
+
+/* Studio HUD States */
+.studio-on-air-badge.state-idle {
+  border-color: var(--te-bezel);
+  color: var(--text-muted);
+}
+.studio-on-air-badge.state-idle .hud-status-glyph {
+  background: var(--text-muted);
+}
+
+/* 🟢 REC / VAD Active */
+.studio-on-air-badge.state-listening {
+  border-color: rgba(16, 185, 129, 0.4);
+  background: rgba(16, 185, 129, 0.08);
+  color: var(--te-lcd-green);
+}
+.studio-on-air-badge.state-listening .hud-status-glyph {
+  background: var(--te-lcd-green);
+  box-shadow: 0 0 6px var(--te-lcd-green);
+}
+
+/* 🟡 Ingestion / Inference Active */
+.studio-on-air-badge.state-translating {
+  border-color: rgba(245, 158, 11, 0.4);
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--te-amber);
+}
+.studio-on-air-badge.state-translating .hud-status-glyph {
+  background: var(--te-amber);
+  box-shadow: 0 0 6px var(--te-amber);
+}
+
+/* 🔵 Half-Duplex TTS Playback Guard Active */
+.studio-on-air-badge.state-speaking {
+  border-color: rgba(99, 102, 241, 0.4);
+  background: rgba(99, 102, 241, 0.09);
+  color: var(--te-purple-lock);
+}
+.studio-on-air-badge.state-speaking .hud-status-glyph {
+  background: var(--te-purple-lock);
+  box-shadow: 0 0 6px var(--te-purple-lock);
 }
 
 .header-actions {
@@ -492,19 +600,20 @@ header {
 }
 
 .panel-header {
-  padding: 0.75rem 1.25rem;
+  padding: 0.65rem 1.25rem;
   background: var(--te-surface);
   border-bottom: 1px solid var(--te-bezel);
   display: flex;
   justify-content: space-between;
   align-items: center;
   user-select: none;
+  gap: 1rem;
 }
 
 .panel-title-group {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 1rem;
   flex-wrap: wrap;
 }
 
@@ -517,6 +626,76 @@ header {
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: #FFF;
+}
+
+/* Teleprompter Controls (Stepper & Follow-Scroll Lock) */
+.teleprompter-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+}
+
+.font-stepper {
+  display: flex;
+  align-items: center;
+  background: var(--te-sunken);
+  border: 1px solid var(--te-bezel);
+  border-radius: var(--radius-key);
+  padding: 1px;
+}
+
+.btn-step {
+  background: transparent;
+  border: none;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  padding: 0.2rem 0.45rem;
+  cursor: pointer;
+  border-radius: 2px;
+  transition: all var(--te-transition);
+}
+
+.btn-step:hover {
+  background: var(--te-bezel);
+  color: #FFF;
+}
+
+.font-step-val {
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  color: var(--te-lcd-green);
+  padding: 0 0.35rem;
+  min-width: 32px;
+  text-align: center;
+}
+
+.btn-resume-scroll {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  background: var(--te-orange);
+  color: var(--text-dark);
+  border: none;
+  border-radius: var(--radius-pill);
+  font-family: var(--font-mono);
+  font-size: 0.64rem;
+  font-weight: 700;
+  padding: 0.25rem 0.65rem;
+  cursor: pointer;
+  box-shadow: 0 2px 6px rgba(255, 68, 0, 0.35);
+  transition: all var(--te-transition);
+  animation: pulseResume 1.8s infinite ease-in-out;
+}
+
+.btn-resume-scroll.hidden {
+  display: none;
+}
+
+@keyframes pulseResume {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-2px); }
 }
 
 /* Green TE Technical Progress Bar alongside Title */
@@ -622,17 +801,45 @@ header {
   font-size: 0.72rem;
 }
 
-/* Individual Conversational Turn Cards (TE Hardware Layout) */
+/* Individual Conversational Turn Cards (Teleprompter High-Fidelity & Emil Kowalski Restraint) */
 .turn-card {
   background: var(--te-surface);
   border: 1px solid var(--te-bezel);
-  border-radius: var(--radius-key);
-  padding: 0.85rem 1rem;
+  border-radius: var(--radius-chassis);
+  padding: 1.15rem 1.35rem;
   display: flex;
   flex-direction: column;
-  gap: 0.5rem;
+  gap: 0.75rem;
   position: relative;
+  box-shadow: var(--te-glass-edge);
   transition: border-color var(--te-transition);
+  /* Zero-lag hardware entrance: 90ms GPU transform */
+  animation: turnCardEnter 90ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+@keyframes turnCardEnter {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .turn-card {
+    animation: none !important;
+    transition: none !important;
+  }
+  .btn-resume-scroll {
+    animation: none !important;
+  }
+  .meter-fill {
+    transition: none !important;
+  }
 }
 
 .turn-card:hover {
@@ -640,28 +847,32 @@ header {
 }
 
 .turn-card.speaker-1 {
-  border-left: 3px solid var(--te-orange);
+  border-left: 4px solid var(--te-orange);
+  background: linear-gradient(90deg, rgba(255, 68, 0, 0.04) 0%, var(--te-surface) 18%);
 }
 
 .turn-card.speaker-2 {
-  border-left: 3px solid var(--te-blue);
+  border-left: 4px solid var(--te-blue);
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.04) 0%, var(--te-surface) 18%);
 }
 
 .turn-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  font-size: 0.68rem;
+  font-size: 0.7rem;
   color: var(--text-muted);
   text-transform: uppercase;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.05em;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 
 .speaker-pill {
   font-weight: 700;
   display: flex;
   align-items: center;
-  gap: 0.45rem;
+  gap: 0.5rem;
 }
 
 .turn-card.speaker-1 .speaker-pill {
@@ -672,11 +883,28 @@ header {
   color: var(--te-blue);
 }
 
+.turn-meta-group {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+}
+
+.turn-latency-tag {
+  color: var(--te-lcd-green);
+  background: var(--te-sunken);
+  border: 1px solid var(--te-bezel);
+  padding: 0.1rem 0.4rem;
+  border-radius: var(--radius-key);
+  font-variant-numeric: tabular-nums;
+}
+
 .turn-overlap-badge {
   background: var(--te-amber-dim);
   color: var(--te-amber);
   border: 1px solid var(--te-amber);
-  padding: 0.1rem 0.35rem;
+  padding: 0.1rem 0.4rem;
   border-radius: var(--radius-key);
   font-size: 0.62rem;
   font-weight: 700;
@@ -685,24 +913,36 @@ header {
 .turn-content {
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.65rem;
 }
 
+/* Original Spoken Text (High contrast, editorial leading, anti-fatigue) */
 .turn-original {
-  font-size: 0.88rem;
+  font-size: var(--font-size-original);
   color: var(--text-primary);
   font-family: var(--font-ui);
-  line-height: 1.5;
+  line-height: var(--leading-teleprompter);
+  font-weight: 500;
+  letter-spacing: -0.012em;
+  word-break: break-word;
 }
 
+/* Bilingual Translation (Recessed sunken slate for distinct mental separation) */
 .turn-translation {
-  font-size: 0.82rem;
+  font-size: var(--font-size-translated);
   color: var(--text-secondary);
-  font-family: var(--font-mono);
+  font-family: var(--font-ui);
+  line-height: var(--leading-teleprompter);
   background: var(--te-sunken);
-  padding: 0.4rem 0.6rem;
+  padding: 0.75rem 1rem;
   border-radius: var(--radius-key);
-  border-left: 2px solid var(--text-muted);
+  border-left: 2px solid var(--te-lcd-green);
+  border-top: 1px solid rgba(255, 255, 255, 0.03);
+  word-break: break-word;
+}
+
+.turn-card.speaker-2 .turn-translation {
+  border-left-color: var(--te-blue);
 }
 
 /* Voice Controls Hardware Dock (Bottom of Teleprompter) */
@@ -713,6 +953,45 @@ header {
   display: flex;
   align-items: center;
   gap: 1rem;
+  position: relative;
+}
+
+.record-btn-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+/* Half-Duplex Lock Floating Chip */
+.half-duplex-lock-pill {
+  position: absolute;
+  top: -34px;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  background: var(--te-purple-lock);
+  color: #FFF;
+  font-family: var(--font-mono);
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0.25rem 0.65rem;
+  border-radius: var(--radius-key);
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.35);
+  pointer-events: none;
+  z-index: 10;
+  white-space: nowrap;
+  animation: lockFloat 1.2s ease-in-out infinite alternate;
+}
+
+.half-duplex-lock-pill.hidden {
+  display: none;
+}
+
+@keyframes lockFloat {
+  from { transform: translateY(0); }
+  to { transform: translateY(-2px); }
 }
 
 /* Teenage Engineering Red Button (Signature Push Key) */

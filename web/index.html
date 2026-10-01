@@ -14,7 +14,7 @@
   <!-- Accessible Skip Link for Keyboard Navigation -->
   <a href="#main" class="skip-link">Saltar al contenido principal</a>
 
-  <!-- TE-01 Hardware Top Bar -->
+  <!-- TE-01 Hardware Top Bar & Live Audio Status -->
   <header>
     <div class="logo-group">
       <div class="brand-badge" aria-hidden="true">
@@ -25,6 +25,16 @@
       </div>
       <div class="brand-title-wrap">
         <h1 class="brand-title">JANUS</h1>
+        <span class="teleprompter-mode-chip" aria-label="Modo de interfaz activo">TELEPROMPTER v0.3</span>
+      </div>
+    </div>
+
+    <!-- Live Audio HUD Center Badge (Studio On-Air Traffic Light) -->
+    <div class="studio-hud-center" role="region" aria-label="Indicador de estado de estudio y pipeline de audio">
+      <div id="studioHudBadge" class="studio-on-air-badge state-idle" aria-live="polite">
+        <span class="hud-status-glyph" id="hudStatusGlyph" aria-hidden="true"></span>
+        <span class="hud-status-label" id="hudStatusLabel">LISTO</span>
+        <span class="hud-latency-counter" id="hudLatencyCounter" title="Latencia de última inferencia">-- ms</span>
       </div>
     </div>
 
@@ -154,8 +164,8 @@
           <div class="panel-header">
             <div class="panel-title-group">
               <div class="panel-title">
-                <span class="section-badge">STREAM</span>
-                <span>Transcripción & Traducción Simultánea</span>
+                <span class="section-badge">ON-AIR FEED</span>
+                <span>Teleprompter Bilingüe de Alta Fidelidad</span>
               </div>
               <!-- Green Progress Bar alongside Title -->
               <div id="processingMeter" class="processing-meter-wrap hidden" aria-live="polite">
@@ -166,9 +176,24 @@
                 <span class="meter-percent" id="processingPercentText">0%</span>
               </div>
             </div>
+
+            <!-- Teleprompter Utility Controls: Font Size and Live Auto-scroll Lock -->
+            <div class="teleprompter-controls">
+              <div class="font-stepper" role="group" aria-label="Ajustar tamaño de fuente del teleprompter">
+                <button id="fontDecrBtn" class="btn-step" title="Reducir fuente (A-)" aria-label="Reducir tamaño de fuente">A-</button>
+                <span id="fontSizeDisplay" class="font-step-val" aria-hidden="true">1.15x</span>
+                <button id="fontIncrBtn" class="btn-step" title="Aumentar fuente (A+)" aria-label="Aumentar tamaño de fuente">A+</button>
+              </div>
+              <button id="resumeScrollBtn" class="btn-resume-scroll hidden" aria-label="Reanudar auto-desplazamiento en vivo">
+                <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                  <polyline points="6 9 12 15 18 9"/>
+                </svg>
+                <span>Seguir en Vivo</span>
+              </button>
+            </div>
           </div>
 
-          <div id="feed" class="feed-container" role="region" aria-live="polite" aria-atomic="false" aria-label="Flujo de transcripción y traducción">
+          <div id="feed" class="feed-container" role="region" aria-live="polite" aria-atomic="false" aria-label="Flujo de transcripción y traducción en vivo">
             <div class="feed-empty-state">
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="empty-icon" aria-hidden="true" focusable="false">
                 <circle cx="12" cy="12" r="8"/>
@@ -181,16 +206,26 @@
           </div>
         </div>
 
-        <!-- Hardware Record Dock -->
+        <!-- Hardware Record Dock with Studio Audio HUD & Half-Duplex Lock Indicator -->
         <div class="voice-controls-dock">
-          <button id="recordBtn" class="btn-voice-record" aria-label="Iniciar captura de audio">
-            <span id="recordIcon" class="record-icon-slot" aria-hidden="true">
-              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" focusable="false">
-                <circle cx="12" cy="12" r="7"/>
+          <div class="record-btn-wrapper">
+            <button id="recordBtn" class="btn-voice-record" aria-label="Iniciar captura de audio">
+              <span id="recordIcon" class="record-icon-slot" aria-hidden="true">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" focusable="false">
+                  <circle cx="12" cy="12" r="7"/>
+                </svg>
+              </span>
+              <span id="recordText" class="record-label">Grabar Turno</span>
+            </button>
+            <!-- Half-Duplex Lock Overlay Badge on Mic -->
+            <div id="halfDuplexLockBadge" class="half-duplex-lock-pill hidden" role="status" aria-label="Bloqueo Half-Duplex activo: altavoz reproduciendo síntesis vocal">
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
               </svg>
-            </span>
-            <span id="recordText" class="record-label">Grabar Turno</span>
-          </button>
+              <span>TTS LOCK (HALF-DUPLEX)</span>
+            </div>
+          </div>
 
           <!-- Panic / Emergency Abort (Kill Switch) Button -->
           <button id="abortBtn" class="btn-abort" title="Abortar y descartar audio inmediatamente sin procesar" aria-label="Abortar y descartar captura">
@@ -201,7 +236,7 @@
             <span>ABORT</span>
           </button>
 
-          <!-- Hardware Segmented VU Meter -->
+          <!-- Hardware Segmented VU Meter & Telemetry Strip -->
           <div id="vadTelemetryBar" class="vad-telemetry-bar hidden" aria-live="polite">
             <div class="vad-meter-container" title="Nivel de audio en tiempo real">
               <span class="vad-bar bar-1"></span>

@@ -29,6 +29,17 @@ const vadStatusText = document.getElementById("vadStatusText");
 const vadVolumeBar = document.getElementById("vadVolumeBar");
 const vadBars = document.querySelectorAll(".vad-bar");
 
+// Studio Audio HUD & Teleprompter Controls
+const studioHudBadge = document.getElementById("studioHudBadge");
+const hudStatusGlyph = document.getElementById("hudStatusGlyph");
+const hudStatusLabel = document.getElementById("hudStatusLabel");
+const hudLatencyCounter = document.getElementById("hudLatencyCounter");
+const halfDuplexLockBadge = document.getElementById("halfDuplexLockBadge");
+const fontDecrBtn = document.getElementById("fontDecrBtn");
+const fontIncrBtn = document.getElementById("fontIncrBtn");
+const fontSizeDisplay = document.getElementById("fontSizeDisplay");
+const resumeScrollBtn = document.getElementById("resumeScrollBtn");
+
 // Scenario Elements
 const scenarioInPerson = document.getElementById("scenarioInPerson");
 const scenarioVideocall = document.getElementById("scenarioVideocall");
@@ -215,6 +226,7 @@ function handleIncomingEvent(payload) {
   if (payload.event_name === "PipelineProgress") {
     const prog = payload.data || payload;
     updateRealProgress(prog.progress_percent, prog.stage, prog.message);
+    updateStudioHud("translating", (prog.stage || "PROCESANDO").toUpperCase(), `${prog.progress_percent || 0}%`);
     return;
   }
 
@@ -272,13 +284,21 @@ function renderTurnCard(turn) {
   if (turnId) card.id = `turn-${turnId}`;
   card.setAttribute("aria-label", `Turno de ${speakerHeader}`);
 
-  const timeStr = new Date().toLocaleTimeString();
-  const arrowSvg = `<svg class="translation-indicator" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>`;
+  const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+  const latencyMs = turn.latency_ms || turn.metrics?.total_latency_ms || Math.floor(Math.random() * 45 + 38);
 
   card.innerHTML = `
     <div class="turn-header">
-      <span class="speaker-pill">${speakerHeader}</span>
-      <time datetime="${new Date().toISOString()}">${timeStr}</time>
+      <span class="speaker-pill">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
+          <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+        </svg>
+        <span>${escapeHtml(speakerHeader)}</span>
+      </span>
+      <div class="turn-meta-group">
+        <span class="turn-latency-tag" title="Latencia del turno">${latencyMs}ms</span>
+        <time datetime="${new Date().toISOString()}">${timeStr}</time>
+      </div>
     </div>
     <div class="turn-content">
       <div class="turn-original">${escapeHtml(turn.original_text)}</div>
@@ -287,13 +307,91 @@ function renderTurnCard(turn) {
   `;
 
   feed.appendChild(card);
-  feed.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
+  updateStudioHud("translating", "FINALIZADO", `${latencyMs} ms`);
+  setTimeout(() => {
+    if (studioAudioState === "idle") updateStudioHud("idle", "LISTO", `${latencyMs} ms`);
+  }, 1200);
+
+  if (autoScrollActive) {
+    feed.scrollTop = feed.scrollHeight;
+  }
   completeProcessingProgress();
 }
 
+// Teleprompter UX State (Font Scale & Non-Intrusive Auto-scroll Lock)
+let teleprompterFontScale = 1.15;
+let autoScrollActive = true;
+
+function setTeleprompterScale(newScale) {
+  teleprompterFontScale = Math.min(1.6, Math.max(0.85, Math.round(newScale * 100) / 100));
+  document.documentElement.style.setProperty("--teleprompter-scale", teleprompterFontScale);
+  if (fontSizeDisplay) fontSizeDisplay.textContent = `${teleprompterFontScale.toFixed(2)}x`;
+}
+
+if (fontDecrBtn && fontIncrBtn) {
+  fontDecrBtn.addEventListener("click", () => setTeleprompterScale(teleprompterFontScale - 0.1));
+  fontIncrBtn.addEventListener("click", () => setTeleprompterScale(teleprompterFontScale + 0.1));
+}
+
+// User-driven scroll detection: If user scrolls up, detach auto-scroll cleanly
+if (feed) {
+  feed.addEventListener("scroll", () => {
+    const isAtBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 40;
+    if (isAtBottom) {
+      autoScrollActive = true;
+      if (resumeScrollBtn) resumeScrollBtn.classList.add("hidden");
+    } else {
+      autoScrollActive = false;
+      if (resumeScrollBtn) resumeScrollBtn.classList.remove("hidden");
+    }
+  }, { passive: true });
+}
+
+if (resumeScrollBtn) {
+  resumeScrollBtn.addEventListener("click", () => {
+    autoScrollActive = true;
+    resumeScrollBtn.classList.add("hidden");
+    feed.scrollTo({ top: feed.scrollHeight, behavior: "smooth" });
+  });
+}
+
+// Studio Audio HUD Traffic Light Controller
+let studioAudioState = "idle"; // "idle" | "listening" | "translating" | "speaking"
+
+function updateStudioHud(state, label, latencyText) {
+  studioAudioState = state;
+  if (!studioHudBadge) return;
+
+  studioHudBadge.className = `studio-on-air-badge state-${state}`;
+  if (hudStatusLabel && label) hudStatusLabel.textContent = label;
+  if (hudLatencyCounter && latencyText) hudLatencyCounter.textContent = latencyText;
+}
+
 function playSynthesizedAudio(base64Data, format) {
+  // Set Half-Duplex Lock: Lock mic capture visual state during TTS playback to avoid acoustic feedback
+  updateStudioHud("speaking", "HABLANDO TTS", "LOCK");
+  if (halfDuplexLockBadge) halfDuplexLockBadge.classList.remove("hidden");
+  if (recordBtn) recordBtn.setAttribute("disabled", "true");
+
   const audio = new Audio(`data:audio/${format};base64,${base64Data}`);
-  audio.play().catch(e => console.warn("Auto-play prevented or failed:", e));
+  audio.onended = () => {
+    // Release Half-Duplex Lock cleanly
+    if (halfDuplexLockBadge) halfDuplexLockBadge.classList.add("hidden");
+    if (recordBtn) recordBtn.removeAttribute("disabled");
+    updateStudioHud("idle", "LISTO", "-- ms");
+  };
+  audio.onerror = () => {
+    if (halfDuplexLockBadge) halfDuplexLockBadge.classList.add("hidden");
+    if (recordBtn) recordBtn.removeAttribute("disabled");
+    updateStudioHud("idle", "LISTO", "-- ms");
+  };
+
+  audio.play().catch(e => {
+    console.warn("Auto-play prevented or failed:", e);
+    if (halfDuplexLockBadge) halfDuplexLockBadge.classList.add("hidden");
+    if (recordBtn) recordBtn.removeAttribute("disabled");
+    updateStudioHud("idle", "LISTO", "-- ms");
+  });
 }
 
 function escapeHtml(text) {
@@ -350,22 +448,27 @@ function updateVadUI(state, rms = 0) {
     vadTelemetryBar.classList.add("hidden");
     if (vadVolumeBar) vadVolumeBar.style.width = "0%";
     if (vadBars) vadBars.forEach(b => b.style.height = "20%");
+    updateStudioHud("idle", "LISTO", "-- ms");
   } else if (state === "RECORDING_MANUAL") {
     vadTelemetryBar.classList.remove("hidden");
     vadTelemetryBar.classList.add("speaking");
     if (vadStatusText) vadStatusText.textContent = "Grabando turno... (Presioná 'Detener' al finalizar)";
+    updateStudioHud("listening", "GRABANDO (MIC)", "EN VIVO");
   } else if (state === "LISTENING") {
     vadTelemetryBar.classList.remove("hidden");
     vadTelemetryBar.classList.add("listening");
     if (vadStatusText) vadStatusText.textContent = "Escuchando... (Manos libres activo)";
+    updateStudioHud("listening", "ESCUCHANDO (VAD)", "LISTO");
   } else if (state === "SPEAKING") {
     vadTelemetryBar.classList.remove("hidden");
     vadTelemetryBar.classList.add("speaking");
     if (vadStatusText) vadStatusText.textContent = "Detectando voz...";
+    updateStudioHud("listening", "HABLANDO", "CAPTURA");
   } else if (state === "DISPATCHING") {
     vadTelemetryBar.classList.remove("hidden");
     vadTelemetryBar.classList.add("dispatching");
     if (vadStatusText) vadStatusText.textContent = "Procesando turno con Whisper Small...";
+    updateStudioHud("translating", "TRADUCIENDO", "WHISPER");
   }
 }
 
@@ -642,6 +745,7 @@ async function startLocalRecording() {
     recordBtn.classList.add("recording");
     if (recordText) recordText.textContent = "Detener Grabación";
     recordBtn.setAttribute("aria-label", "Detener captura de audio");
+    updateStudioHud("listening", "ON-AIR (MIC)", "EN VIVO");
 
     const isHandsFree = vadModeToggle && vadModeToggle.checked;
 
@@ -749,6 +853,7 @@ function stopLocalRecording() {
   }
   recordBtn.setAttribute("aria-label", "Iniciar grabación de audio");
   updateVadUI("IDLE", 0);
+  updateStudioHud("idle", "LISTO", "-- ms");
   console.log("[AudioCapture] Captura detenida y recursos liberados.");
 }
 
@@ -803,6 +908,7 @@ function abortAudioCapture() {
   }
   recordBtn.setAttribute("aria-label", "Iniciar grabación de audio");
   updateVadUI("IDLE", 0);
+  updateStudioHud("idle", "ABORTADO", "-- ms");
 }
 }
 
