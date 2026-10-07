@@ -5,6 +5,7 @@ from janus.ports.llm_port import ILLMProvider
 from janus.adapters.llm.mock_llm_adapter import MockLLMAdapter
 from janus.adapters.llm.ollama_adapter import OllamaAdapter
 from janus.adapters.llm.gemini_adapter import GeminiAdapter
+from janus.adapters.llm.claude_adapter import ClaudeAdapter
 
 load_dotenv()
 
@@ -28,10 +29,15 @@ class LLMProviderFactory:
 
         if prov == "gemini":
             api_key = cfg.get("api_key") or os.getenv("GEMINI_API_KEY", "")
-            model = cfg.get("model") or os.getenv("GEMINI_MODEL", "gemini-3.6-flash")
+            model = cfg.get("model") or os.getenv("GEMINI_MODEL", "gemini-3.5-flash")
             return GeminiAdapter(api_key=api_key, model=model)
 
-        # Default to local Ollama
+        if prov == "claude":
+            api_key = cfg.get("api_key") or os.getenv("ANTHROPIC_API_KEY", os.getenv("CLAUDE_API_KEY", ""))
+            model = cfg.get("model") or os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
+            return ClaudeAdapter(api_key=api_key, model=model)
+
+        # Default to local Ollama (RTX 3060 local acceleration)
         base_url = cfg.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
         model = cfg.get("model") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
         return OllamaAdapter(base_url=base_url, model=model)

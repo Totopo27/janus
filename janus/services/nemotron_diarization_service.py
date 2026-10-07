@@ -266,6 +266,11 @@ class NemotronDiarizationService:
             # Sort segments chronologically
             segments.sort(key=lambda s: s.start)
 
+            # Anti-phantom filter for Sortformer frame detections:
+            # Reassign micro-segments (< 1.8s) to nearest active neighbor
+            segments = self._filter_phantom_segments(segments)
+            active_speaker_set = set(s.speaker_index for s in segments)
+
             # Overlapping speech detection: frames where >= 2 speakers exceed probability threshold
             simultaneous_speakers_per_frame = np.sum(probs >= self.probability_threshold, axis=1)
             overlap_frames = np.sum(simultaneous_speakers_per_frame >= 2)
@@ -304,3 +309,43 @@ class NemotronDiarizationService:
                 segments=[],
                 acoustic_hint="Nemotron inference error, falling back to default.",
             )
+
+    def _filter_phantom_segments(self, segments: List[NemotronSpeakerSegment]) -> List[NemotronSpeakerSegment]:
+        """
+        Anti-phantom floor: reassigns short segments (< 1.8s)
+        to the nearest preceding or following speaker to avoid false clusters.
+        """
+        if not segments or len(segments) <= 1:
+            return segments
+
+        min_floor = 1.8
+        filtered: List[NemotronSpeakerSegment] = []
+        for i, seg in enumerate(segments):
+            dur = seg.end - seg.start
+            if dur < min_floor:
+                target_speaker = None
+                if filtered:
+                    target_speaker = filtered[-1].speaker_index
+                elif i + 1 < len(segments):
+                    target_speaker = segments[i + 1].speaker_index
+
+                if target_speaker is not None:
+                    seg = NemotronSpeakerSegment(
+                        start=seg.start,
+                        end=seg.end,
+                        speaker_index=target_speaker,
+                        confidence=seg.confidence * 0.85,
+                    )
+
+            if filtered and filtered[-1].speaker_index == seg.speaker_index:
+                prev = filtered[-1]
+                filtered[-1] = NemotronSpeakerSegment(
+                    start=prev.start,
+                    end=max(prev.end, seg.end),
+                    speaker_index=prev.speaker_index,
+                    confidence=round((prev.confidence + seg.confidence) / 2.0, 2),
+                )
+            else:
+                filtered.append(seg)
+
+        return filtered

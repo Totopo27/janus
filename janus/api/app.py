@@ -61,25 +61,26 @@ def create_app(
         allow_headers=["*"],
     )
 
-    # Initialize default persistence & storage services
-    if meeting_repo is None:
-        meeting_repo = SqliteMeetingRepository(db_path=db_path)
-    if notes_service is None:
-        notes_service = MeetingNotesService(repository=meeting_repo)
-
-    # Initialize default services if not injected
-    if broadcaster is None:
-        broadcaster = WebSocketBroadcaster()
-
     # Initialize BYOM & Chat service
     llm_factory = LLMProviderFactory()
     if llm_provider is None:
         gemini_key = os.environ.get("GEMINI_API_KEY")
+        claude_key = os.environ.get("ANTHROPIC_API_KEY", os.environ.get("CLAUDE_API_KEY"))
         if gemini_key:
             llm_provider = llm_factory.create("gemini", api_key=gemini_key, model="gemini-3.5-flash")
             logger.info("Janus LLM Intelligence active: Google Gemini Flash Cloud.")
+        elif claude_key:
+            llm_provider = llm_factory.create("claude", api_key=claude_key)
+            logger.info("Janus LLM Intelligence active: Anthropic Claude Messages API.")
         else:
             llm_provider = llm_factory.create("ollama")
+            logger.info("Janus LLM Intelligence active: Ollama Local (RTX 3060).")
+
+    # Initialize default persistence & storage services
+    if meeting_repo is None:
+        meeting_repo = SqliteMeetingRepository(db_path=db_path)
+    if notes_service is None:
+        notes_service = MeetingNotesService(repository=meeting_repo, llm_provider=llm_provider)
     if chat_service is None:
         chat_service = MeetingChatService(repository=meeting_repo, llm_provider=llm_provider)
 

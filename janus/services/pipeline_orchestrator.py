@@ -248,6 +248,14 @@ class PipelineOrchestrator:
             )
 
         if self.fusion_service:
+            # Build current dictionary of known participants in the session
+            session_speakers = {
+                session.speaker_a.speaker_id: session.speaker_a.name,
+                session.speaker_b.speaker_id: session.speaker_b.name,
+            }
+            if self.diarizer and hasattr(self.diarizer, "_session_speaker_names"):
+                session_speakers.update(self.diarizer._session_speaker_names.get(session.session_id, {}))
+
             fused_turns = await asyncio.to_thread(
                 self.fusion_service.fuse_and_translate,
                 text=transcription.text,
@@ -258,6 +266,7 @@ class PipelineOrchestrator:
                 source_lang=source_lang,
                 target_lang=target_lang,
                 acoustic_hint=acoustic_hint,
+                available_speakers=session_speakers,
             )
         else:
             translation = await asyncio.to_thread(

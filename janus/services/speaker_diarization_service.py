@@ -29,6 +29,7 @@ class SpeakerDiarizationService:
     On-device, offline Speaker Diarization and Voice Biometrics Service.
     Uses Sherpa-ONNX CAM++ (3D-Speaker) for acoustic embeddings and PyAnnote 3.0 ONNX
     for offline speaker segmentation and turn detection in single-microphone scenarios.
+    Supports multi-speaker interviews (2, 3, 4+ speakers) and filters phantom speakers.
     """
 
     def __init__(
@@ -38,12 +39,16 @@ class SpeakerDiarizationService:
         num_threads: int = 2,
         similarity_threshold: float = 0.65,
         min_duration_seconds: float = 0.4,
+        max_speakers: int = 8,
+        min_speaker_floor_seconds: float = 1.8,
     ) -> None:
         self.model_path = model_path
         self.segmentation_model_path = segmentation_model_path
         self.num_threads = num_threads
         self.similarity_threshold = similarity_threshold
         self.min_duration_seconds = min_duration_seconds
+        self.max_speakers = max_speakers
+        self.min_speaker_floor_seconds = min_speaker_floor_seconds
 
         self._extractor = None
         self._is_fallback = False
@@ -236,12 +241,10 @@ class SpeakerDiarizationService:
                 logger.debug(f"[{session_id}] Similarity with '{registered_id}': {similarity:.3f} (thresh={self.similarity_threshold})")
 
                 if similarity >= self.similarity_threshold:
-                    # Matches speaker 1: enrich voice profile if match is high confidence
                     if similarity >= 0.58:
                         manager.add(registered_id, embedding)
                     return registered_id, speaker_names_map.get(registered_id, "Hablante 1"), float(similarity)
                 else:
-                    # New speaker detected! Register speaker 2
                     speaker_id = "speaker_2"
                     display_name = "Hablante 2"
                     manager.add(speaker_id, embedding)
@@ -264,11 +267,11 @@ class SpeakerDiarizationService:
 
             logger.info(f"[{session_id}] Best acoustic speaker match: '{best_id}' with score {best_score:.3f}")
 
-            # Refine speaker centroid if high confidence to adapt to acoustic variations
+            # Refine centroid if match is strong
             if best_score >= 0.58:
                 manager.add(best_id, embedding)
 
-            display_name = speaker_names_map.get(best_id, best_id.capitalize())
+            display_name = speaker_names_map.get(best_id, speaker_names_map.get(best_id, best_id.capitalize()))
             return best_id, display_name, float(best_score)
 
         except Exception as exc:
@@ -295,7 +298,7 @@ class SpeakerDiarizationService:
             result = self._diarizer.process(samples)
             sorted_segs = result.sort_by_start_time()
 
-            segments = [
+            raw_segments = [
                 DiarizationSegment(
                     start=round(float(s.start), 2),
                     end=round(float(s.end), 2),
@@ -304,6 +307,9 @@ class SpeakerDiarizationService:
                 )
                 for s in sorted_segs
             ]
+
+            # Anti-phantom filter: merge or reassign segments under min_speaker_floor_seconds (<1.8s)
+            segments = self._filter_phantom_segments(raw_segments)
 
             unique_speakers = set(s.speaker_index for s in segments)
             num_speakers = len(unique_speakers) if unique_speakers else 1
@@ -329,6 +335,47 @@ class SpeakerDiarizationService:
                 segments=[],
                 acoustic_hint="monologue",
             )
+
+    def _filter_phantom_segments(self, segments: List[DiarizationSegment]) -> List[DiarizationSegment]:
+        """
+        Anti-phantom floor: reassigns short segments (< min_speaker_floor_seconds)
+        to the nearest preceding or following speaker to avoid spurious one-off clusters.
+        """
+        if not segments or len(segments) <= 1:
+            return segments
+
+        filtered: List[DiarizationSegment] = []
+        for i, seg in enumerate(segments):
+            dur = seg.end - seg.start
+            if dur < self.min_speaker_floor_seconds:
+                # Reassign to previous speaker if available, else next speaker
+                target_speaker = None
+                if filtered:
+                    target_speaker = filtered[-1].speaker_index
+                elif i + 1 < len(segments):
+                    target_speaker = segments[i + 1].speaker_index
+
+                if target_speaker is not None:
+                    seg = DiarizationSegment(
+                        start=seg.start,
+                        end=seg.end,
+                        speaker_index=target_speaker,
+                        confidence=seg.confidence * 0.85,
+                    )
+
+            # Coalesce contiguous segments of the same speaker
+            if filtered and filtered[-1].speaker_index == seg.speaker_index:
+                prev = filtered[-1]
+                filtered[-1] = DiarizationSegment(
+                    start=prev.start,
+                    end=max(prev.end, seg.end),
+                    speaker_index=prev.speaker_index,
+                    confidence=round((prev.confidence + seg.confidence) / 2.0, 2),
+                )
+            else:
+                filtered.append(seg)
+
+        return filtered
 
     def reset_session(self, session_id: str) -> None:
         """Clears registered speaker embeddings for a given session."""

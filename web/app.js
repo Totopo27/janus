@@ -289,11 +289,11 @@ function renderTurnCard(turn) {
 
   card.innerHTML = `
     <div class="turn-header">
-      <span class="speaker-pill">
+      <span class="speaker-pill" style="cursor: pointer;" title="Toca para renombrar a este interlocutor">
         <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">
           <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
         </svg>
-        <span>${escapeHtml(speakerHeader)}</span>
+        <span class="speaker-name-display" data-speaker-id="${escapeHtml(turn.speaker_id)}">${escapeHtml(speakerHeader)}</span>
       </span>
       <div class="turn-meta-group">
         <span class="turn-latency-tag" title="Latencia del turno">${latencyMs}ms</span>
@@ -301,10 +301,37 @@ function renderTurnCard(turn) {
       </div>
     </div>
     <div class="turn-content">
-      <div class="turn-original">${escapeHtml(turn.original_text)}</div>
+      <div class="turn-original" contenteditable="true" title="Toca para editar texto">${escapeHtml(turn.original_text)}</div>
       <div class="turn-translation">${escapeHtml(turn.translated_text)}</div>
     </div>
   `;
+
+  // Attach quick rename handler directly on the speaker pill
+  const pillSpan = card.querySelector(".speaker-pill");
+  if (pillSpan) {
+    pillSpan.addEventListener("click", async () => {
+      const currentName = turn.speaker_name || speakerLabel;
+      const newName = prompt(`Ingresa el nombre real para ${currentName}:`, currentName);
+      if (newName && newName.trim() && newName.trim() !== currentName) {
+        try {
+          await fetch(`/api/meetings/${SESSION_ID}/rename-speaker`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              speaker_id: turn.speaker_id,
+              new_name: newName.trim(),
+            })
+          });
+          // Update all cards with this speaker_id
+          document.querySelectorAll(`[data-speaker-id="${turn.speaker_id}"]`).forEach(el => {
+            el.textContent = `${newName.trim()} (${srcLang} → ${tgtLang})`;
+          });
+        } catch (e) {
+          console.error("Error renombrando orador:", e);
+        }
+      }
+    });
+  }
 
   feed.appendChild(card);
   updateStudioHud("translating", "FINALIZADO", `${latencyMs} ms`);

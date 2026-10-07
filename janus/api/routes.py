@@ -1,7 +1,7 @@
 from typing import List, Optional, Dict, Any, Literal
 from fastapi import APIRouter, HTTPException, Response, status
 from pydantic import BaseModel, Field
-from janus.domain.models import SpeakerProfile, Meeting, ChatMessage, SearchResult
+from janus.domain.models import SpeakerProfile, Meeting, ChatMessage, SearchResult, ActionItem, MeetingSummary
 from janus.services.session_service import SessionService
 from janus.services.meeting_notes_service import MeetingNotesService
 from janus.services.meeting_chat_service import MeetingChatService
@@ -117,6 +117,23 @@ class CatchUpRequest(BaseModel):
 class CatchUpResponse(BaseModel):
     meeting_id: str
     summary: str
+
+
+class RenameSpeakerRequest(BaseModel):
+    speaker_id: str = Field(..., description="Target speaker ID (e.g. 'speaker_1', 'speaker_2')")
+    new_name: str = Field(..., description="Human display name to assign")
+
+
+class EditTurnRequest(BaseModel):
+    original_text: Optional[str] = None
+    translated_text: Optional[str] = None
+    speaker_id: Optional[str] = None
+
+
+class UpdateSummaryRequest(BaseModel):
+    executive_summary: Optional[str] = None
+    key_points: Optional[List[str]] = None
+    action_items: Optional[List[ActionItemSchema]] = None
 
 
 def create_api_router(
@@ -469,6 +486,93 @@ def create_api_router(
             meeting_id=meeting_id,
             summary=summary,
         )
+
+    # -------------------------------------------------------------
+    # Interactive Mobile Console: In-Situ Editing & Live Re-labeling
+    # -------------------------------------------------------------
+
+    @router.patch("/meetings/{meeting_id}/rename-speaker")
+    def rename_speaker(meeting_id: str, request: RenameSpeakerRequest):
+        """
+        Renames a speaker label across the session, in-memory turns, and persistent meeting storage.
+        Allows the mobile interviewer to change 'speaker_1' to 'Carlos (Entrevistador)' live.
+        """
+        session = session_service.get_session(meeting_id)
+        if session:
+            if session.speaker_a.speaker_id == request.speaker_id:
+                session.speaker_a = SpeakerProfile(
+                    speaker_id=session.speaker_a.speaker_id,
+                    name=request.new_name,
+                    native_language=session.speaker_a.native_language,
+                    preferred_voice_style=session.speaker_a.preferred_voice_style,
+                )
+            elif session.speaker_b.speaker_id == request.speaker_id:
+                session.speaker_b = SpeakerProfile(
+                    speaker_id=session.speaker_b.speaker_id,
+                    name=request.new_name,
+                    native_language=session.speaker_b.native_language,
+                    preferred_voice_style=session.speaker_b.preferred_voice_style,
+                )
+
+        if meeting_repo:
+            meeting = meeting_repo.get_meeting(meeting_id)
+            if meeting:
+                if meeting.speaker_a.speaker_id == request.speaker_id:
+                    meeting.speaker_a = SpeakerProfile(
+                        speaker_id=meeting.speaker_a.speaker_id,
+                        name=request.new_name,
+                        native_language=meeting.speaker_a.native_language,
+                        preferred_voice_style=meeting.speaker_a.preferred_voice_style,
+                    )
+                elif meeting.speaker_b.speaker_id == request.speaker_id:
+                    meeting.speaker_b = SpeakerProfile(
+                        speaker_id=meeting.speaker_b.speaker_id,
+                        name=request.new_name,
+                        native_language=meeting.speaker_b.native_language,
+                        preferred_voice_style=meeting.speaker_b.preferred_voice_style,
+                    )
+                meeting_repo.save_meeting(meeting)
+
+        return {"status": "ok", "speaker_id": request.speaker_id, "new_name": request.new_name}
+
+    @router.put("/meetings/{meeting_id}/summary", response_model=MeetingResponse)
+    def update_meeting_summary(meeting_id: str, request: UpdateSummaryRequest):
+        """
+        Allows the mobile user to manually edit and enrich executive summary,
+        key discussion points, or action items directly from their phone.
+        """
+        if not meeting_repo:
+            raise HTTPException(status_code=503, detail="Storage repository not configured")
+        meeting = meeting_repo.get_meeting(meeting_id)
+        if not meeting:
+            raise HTTPException(status_code=404, detail="Meeting not found")
+
+        current_summary = meeting.summary or MeetingSummary(executive_summary="", key_points=[], action_items=[])
+
+        exec_summary = request.executive_summary if request.executive_summary is not None else current_summary.executive_summary
+        points = request.key_points if request.key_points is not None else current_summary.key_points
+        items = (
+            [
+                ActionItem(
+                    assignee=a.assignee,
+                    task=a.task,
+                    completed=a.completed,
+                    due_hint=a.due_hint,
+                )
+                for a in request.action_items
+            ]
+            if request.action_items is not None
+            else current_summary.action_items
+        )
+
+        new_summary = MeetingSummary(
+            executive_summary=exec_summary,
+            key_points=points,
+            action_items=items,
+        )
+        meeting_repo.save_summary(meeting_id, new_summary)
+        updated = meeting_repo.get_meeting(meeting_id)
+        return _build_meeting_response(updated)
 
 
     # -------------------------------------------------------------

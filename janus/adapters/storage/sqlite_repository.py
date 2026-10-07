@@ -139,6 +139,14 @@ class SqliteMeetingRepository(IMeetingRepository):
                 ON CONFLICT(meeting_id) DO UPDATE SET
                     title=excluded.title,
                     topic_key=excluded.topic_key,
+                    speaker_a_id=excluded.speaker_a_id,
+                    speaker_a_name=excluded.speaker_a_name,
+                    speaker_a_lang=excluded.speaker_a_lang,
+                    speaker_a_voice=excluded.speaker_a_voice,
+                    speaker_b_id=excluded.speaker_b_id,
+                    speaker_b_name=excluded.speaker_b_name,
+                    speaker_b_lang=excluded.speaker_b_lang,
+                    speaker_b_voice=excluded.speaker_b_voice,
                     status=excluded.status,
                     ended_at=excluded.ended_at
             """, (

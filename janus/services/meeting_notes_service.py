@@ -1,9 +1,11 @@
 from datetime import datetime, timezone
+import json
 import logging
 import re
 from typing import List, Optional
 from janus.domain.models import Meeting, MeetingSummary, ActionItem
 from janus.ports.storage_port import IMeetingRepository
+from janus.ports.llm_port import ILLMProvider
 
 logger = logging.getLogger(__name__)
 
@@ -11,11 +13,17 @@ logger = logging.getLogger(__name__)
 class MeetingNotesService:
     """
     Generates structured meeting notes, executive summaries,
-    and action items from recorded bilingual conversations.
+    and action items from recorded bilingual conversations using
+    adaptive LLMs (Ollama RTX 3060 / Claude / Gemini) with heuristic fallback.
     """
 
-    def __init__(self, repository: IMeetingRepository) -> None:
+    def __init__(
+        self,
+        repository: IMeetingRepository,
+        llm_provider: Optional[ILLMProvider] = None,
+    ) -> None:
         self.repo = repository
+        self.llm_provider = llm_provider
 
     def generate_notes_and_finalize(self, meeting_id: str) -> Optional[MeetingSummary]:
         """
@@ -37,7 +45,60 @@ class MeetingNotesService:
             self.repo.save_summary(meeting_id, summary)
             return summary
 
-        # 1. Executive Summary Synthesis
+        # 1. Attempt LLM-Driven Synthesis if provider is available
+        if self.llm_provider:
+            try:
+                transcript_lines = []
+                for t in turns:
+                    spk = meeting.get_speaker(t.speaker_id)
+                    name = spk.name if spk else t.speaker_id
+                    text = t.original_transcription.text.strip()
+                    transcript_lines.append(f"{name}: {text}")
+
+                full_transcript = "\n".join(transcript_lines)
+                sys_prompt = (
+                    "Eres un asistente ejecutivo experto en estructurar minutas de entrevistas y reuniones multi-hablante. "
+                    "Analiza la transcripción provista y genera un análisis exhaustivo en formato JSON estricto.\n\n"
+                    "Esquema JSON requerido:\n"
+                    "{\n"
+                    '  "executive_summary": "Resumen conciso y profesional de los objetivos y resultados de la entrevista",\n'
+                    '  "key_points": ["Punto clave 1 discutido", "Punto clave 2 discutido"],\n'
+                    '  "action_items": [\n'
+                    '    {"assignee": "Nombre del responsable", "task": "Tarea o compromiso acordado", "due_hint": "Opcional plazo o null"}\n'
+                    "  ]\n"
+                    "}\n"
+                    "Devuelve ÚNICAMENTE el bloque JSON válido, sin explicaciones ni markdown."
+                )
+
+                prompt = f"Transcripción de la entrevista:\n<transcript>\n{full_transcript}\n</transcript>"
+                raw_res = self.llm_provider.generate(prompt=prompt, system_prompt=sys_prompt).strip()
+
+                if raw_res.startswith("```"):
+                    raw_res = re.sub(r"^```(?:json)?\s*", "", raw_res)
+                    raw_res = re.sub(r"\s*```$", "", raw_res)
+
+                parsed = json.loads(raw_res)
+                if isinstance(parsed, dict) and "executive_summary" in parsed:
+                    action_items = [
+                        ActionItem(
+                            assignee=item.get("assignee", "Participante"),
+                            task=item.get("task", "Seguimiento"),
+                            due_hint=item.get("due_hint"),
+                        )
+                        for item in parsed.get("action_items", [])
+                    ]
+                    summary = MeetingSummary(
+                        executive_summary=parsed.get("executive_summary", ""),
+                        key_points=parsed.get("key_points", []),
+                        action_items=action_items,
+                    )
+                    self.repo.save_summary(meeting_id, summary)
+                    logger.info(f"Structured meeting summary successfully generated via LLM ({self.llm_provider.provider_name})")
+                    return summary
+            except Exception as le:
+                logger.warning(f"LLM meeting notes generation failed: {le}. Falling back to deterministic heuristics.")
+
+        # 2. Deterministic Heuristic Fallback
         spk_a_name = meeting.speaker_a.name
         spk_b_name = meeting.speaker_b.name
         num_turns = len(turns)
