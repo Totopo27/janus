@@ -113,8 +113,16 @@ async function initSession() {
   }
 }
 
+let teleprompterRetryCount = 0;
+let teleprompterReconnectTimeout = null;
+
 // 2. Connect to Teleprompter WebSocket
 function connectTeleprompter() {
+  if (teleprompterReconnectTimeout) {
+    clearTimeout(teleprompterReconnectTimeout);
+    teleprompterReconnectTimeout = null;
+  }
+
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws/live-notes/${SESSION_ID}`;
 
@@ -123,15 +131,20 @@ function connectTeleprompter() {
 
   teleprompterSocket.onopen = () => {
     console.log("[TeleprompterSocket] Conexión establecida (En Vivo)");
+    teleprompterRetryCount = 0;
     statusDot.classList.add("connected");
     statusText.textContent = "En Vivo (Conectado)";
   };
 
   teleprompterSocket.onclose = (evt) => {
-    console.warn(`[TeleprompterSocket] Conexión cerrada (código: ${evt.code}). Reintentando en 2s...`);
     statusDot.classList.remove("connected");
     statusText.textContent = "Desconectado (Reintentando...)";
-    setTimeout(connectTeleprompter, 2000);
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, up to 15s max
+    teleprompterRetryCount++;
+    const delay = Math.min(1000 * Math.pow(2, teleprompterRetryCount - 1), 15000);
+    console.warn(`[TeleprompterSocket] Conexión cerrada (código: ${evt.code}). Reintentando en ${delay}ms (intento ${teleprompterRetryCount})...`);
+    teleprompterReconnectTimeout = setTimeout(connectTeleprompter, delay);
   };
 
   teleprompterSocket.onerror = (err) => {
