@@ -8,6 +8,7 @@ from janus.adapters.stt.mock_stt_adapter import MockSpeechRecognizer
 from janus.adapters.translation.mock_translator import MockTranslator
 from janus.adapters.tts.mock_tts_adapter import MockSpeechSynthesizer
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
+from janus.domain.models import ConversationTurn, TranscriptionResult, TranslationResult
 
 
 def test_api_health_and_session_routes(tmp_path):
@@ -294,5 +295,54 @@ def test_websocket_audio_stream_logging_and_turn_dispatch(tmp_path):
         assert data["original_text"] == "Hola probando entrada de micrófono"
         assert data["translated_text"] == "Hello testing microphone input"
         assert "audio_base64" in data
+
+
+def test_unavailable_summary_status_is_exposed_and_preserved_on_manual_edits(tmp_path):
+    meeting_repo = SqliteMeetingRepository(str(tmp_path / "honest_notes.db"))
+    notes_service = MeetingNotesService(repository=meeting_repo)
+    broadcaster = WebSocketBroadcaster()
+    orchestrator = PipelineOrchestrator(
+        stt_engine=MockSpeechRecognizer(),
+        translation_engine=MockTranslator(),
+        tts_engine=MockSpeechSynthesizer(),
+        broadcaster=broadcaster,
+        storage_repo=meeting_repo,
+    )
+    client = TestClient(create_app(
+        session_service=SessionService(),
+        orchestrator=orchestrator,
+        broadcaster=broadcaster,
+        meeting_repo=meeting_repo,
+        notes_service=notes_service,
+    ))
+    response = client.post("/api/meetings", json={
+        "meeting_id": "honest",
+        "title": "Honest notes",
+        "speaker_a": {"speaker_id": "a", "name": "Alice", "native_language": "en"},
+        "speaker_b": {"speaker_id": "b", "name": "Bob", "native_language": "es"},
+    })
+    assert response.status_code == 201
+    meeting_repo.save_turn("honest", ConversationTurn(
+        "hello", "honest", "a", TranscriptionResult("Hello, how are you today?", "en"),
+        TranslationResult("Hello, how are you today?", "en", "Hola, ¿cómo estás hoy?", "es"),
+    ))
+
+    finalized = client.post("/api/meetings/honest/finalize")
+    assert finalized.status_code == 200
+    summary = finalized.json()["summary"]
+    assert summary["summary_status"] == "unavailable"
+    assert summary["degraded_reason"] == "no_llm_provider"
+    assert summary["executive_summary"] == ""
+    assert summary["action_items"] == []
+
+    assert client.get("/api/meetings/honest").json()["summary"] == summary
+    assert client.get("/api/meetings").json()[0]["summary"] == summary
+    assert client.get("/api/meetings/honest/notes").json() == summary
+
+    for edit in [{"key_points": ["Manually reviewed point"]}, {"executive_summary": "Manual summary"}]:
+        edited = client.put("/api/meetings/honest/summary", json=edit)
+        assert edited.status_code == 200
+        assert edited.json()["summary"]["summary_status"] == "unavailable"
+        assert edited.json()["summary"]["degraded_reason"] == "no_llm_provider"
 
 

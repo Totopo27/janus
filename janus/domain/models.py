@@ -1,6 +1,6 @@
 from __future__ import annotations
 from dataclasses import dataclass, field
-from typing import List, Optional
+from typing import List, Literal, Optional
 import time
 
 
@@ -115,11 +115,13 @@ class ActionItem:
 
 @dataclass
 class MeetingSummary:
-    """Executive summary, key discussion points, and commitments for a meeting."""
+    """Meeting notes; generation status does not certify semantic accuracy."""
     executive_summary: str
     key_points: List[str] = field(default_factory=list)
     action_items: List[ActionItem] = field(default_factory=list)
     generated_at: float = field(default_factory=time.time)
+    summary_status: Literal["generated", "unavailable", "empty", "legacy"] = "legacy"
+    degraded_reason: str | None = None
 
 
 @dataclass

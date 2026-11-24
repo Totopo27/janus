@@ -50,6 +50,8 @@ class MeetingSummarySchema(BaseModel):
     key_points: List[str]
     action_items: List[ActionItemSchema]
     generated_at: float
+    summary_status: Literal["generated", "unavailable", "empty", "legacy"] = "legacy"
+    degraded_reason: str | None = None
 
 
 class MeetingResponse(BaseModel):
@@ -569,6 +571,8 @@ def create_api_router(
             executive_summary=exec_summary,
             key_points=points,
             action_items=items,
+            summary_status=current_summary.summary_status,
+            degraded_reason=current_summary.degraded_reason,
         )
         meeting_repo.save_summary(meeting_id, new_summary)
         updated = meeting_repo.get_meeting(meeting_id)
@@ -642,6 +646,8 @@ def _build_meeting_response(m: Meeting) -> MeetingResponse:
                 for i in m.summary.action_items
             ],
             generated_at=m.summary.generated_at,
+            summary_status=m.summary.summary_status,
+            degraded_reason=m.summary.degraded_reason,
         )
 
     return MeetingResponse(

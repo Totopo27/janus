@@ -62,6 +62,7 @@ const searchResultsList = document.getElementById("searchResultsList");
 const notesModal = document.getElementById("notesModal");
 const closeModalBtn = document.getElementById("closeModalBtn");
 const modalExecutiveSummary = document.getElementById("modalExecutiveSummary");
+const modalSummaryStatus = document.getElementById("modalSummaryStatus");
 const modalKeyPoints = document.getElementById("modalKeyPoints");
 const modalActionItems = document.getElementById("modalActionItems");
 const downloadMdBtn = document.getElementById("downloadMdBtn");
@@ -937,7 +938,6 @@ function abortAudioCapture() {
   updateVadUI("IDLE", 0);
   updateStudioHud("idle", "ABORTADO", "-- ms");
 }
-}
 
 const abortBtn = document.getElementById("abortBtn");
 if (abortBtn) {
@@ -1202,6 +1202,13 @@ if (finalizeBtn) {
 
       if (summary) {
         modalExecutiveSummary.textContent = summary.executive_summary;
+        const summaryWarning = summary.summary_status === "unavailable"
+          ? "Síntesis automática no disponible; revisa los extractos y compromisos detectados por reglas."
+          : summary.summary_status === "legacy"
+            ? "Estado de generación desconocido; revisa esta minuta anterior."
+            : "";
+        modalSummaryStatus.textContent = summaryWarning;
+        modalSummaryStatus.hidden = !summaryWarning;
 
         modalKeyPoints.innerHTML = "";
         (summary.key_points || []).forEach(pt => {
@@ -1242,14 +1249,14 @@ if (closeModalBtn) {
 
 if (downloadMdBtn) {
   downloadMdBtn.addEventListener("click", () => {
-    window.location.href = `/api/meetings/${SESSION_ID}/notes?format=markdown`;
+    window.location.href = `/api/meetings/${SESSION_ID}/notes?notes_format=markdown`;
   });
 }
 
 if (copyNotesBtn) {
   copyNotesBtn.addEventListener("click", async () => {
     try {
-      const res = await fetch(`/api/meetings/${SESSION_ID}/notes?format=markdown`);
+      const res = await fetch(`/api/meetings/${SESSION_ID}/notes?notes_format=markdown`);
       const md = await res.text();
       await navigator.clipboard.writeText(md);
       copyNotesBtn.innerHTML = `

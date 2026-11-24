@@ -127,6 +127,12 @@ class SqliteMeetingRepository(IMeetingRepository):
             if cols and "topic_key" not in cols:
                 conn.execute("ALTER TABLE meetings ADD COLUMN topic_key TEXT;")
 
+            summary_cols = [row[1] for row in conn.execute("PRAGMA table_info(summaries)")]
+            if "summary_status" not in summary_cols:
+                conn.execute("ALTER TABLE summaries ADD COLUMN summary_status TEXT NOT NULL DEFAULT 'legacy';")
+            if "degraded_reason" not in summary_cols:
+                conn.execute("ALTER TABLE summaries ADD COLUMN degraded_reason TEXT;")
+
     def save_meeting(self, meeting: Meeting) -> None:
         with self._get_connection() as conn:
             conn.execute("""
@@ -201,13 +207,16 @@ class SqliteMeetingRepository(IMeetingRepository):
             # 2. Insert or replace summary
             conn.execute("""
                 INSERT OR REPLACE INTO summaries (
-                    meeting_id, executive_summary, key_points_json, generated_at
-                ) VALUES (?, ?, ?, ?)
+                    meeting_id, executive_summary, key_points_json, generated_at,
+                    summary_status, degraded_reason
+                ) VALUES (?, ?, ?, ?, ?, ?)
             """, (
                 meeting_id,
                 summary.executive_summary,
                 json.dumps(summary.key_points),
                 summary.generated_at,
+                summary.summary_status,
+                summary.degraded_reason,
             ))
 
             # 3. Insert action items
@@ -292,6 +301,8 @@ class SqliteMeetingRepository(IMeetingRepository):
                     key_points=json.loads(s_row["key_points_json"]),
                     action_items=action_items,
                     generated_at=s_row["generated_at"],
+                    summary_status=s_row["summary_status"],
+                    degraded_reason=s_row["degraded_reason"],
                 )
 
             return Meeting(
@@ -375,6 +386,8 @@ class SqliteMeetingRepository(IMeetingRepository):
                         key_points=json.loads(s_row["key_points_json"]),
                         action_items=action_items,
                         generated_at=s_row["generated_at"],
+                        summary_status=s_row["summary_status"],
+                        degraded_reason=s_row["degraded_reason"],
                     )
 
                 # Build a lightweight Meeting (turns list empty — use get_meeting for full turns)

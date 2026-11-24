@@ -1,4 +1,5 @@
 import os
+import sqlite3
 import pytest
 from janus.domain.models import (
     Meeting,
@@ -117,3 +118,57 @@ def test_list_and_delete_meetings(repo):
     assert repo.delete_meeting("m1") is True
     assert repo.get_meeting("m1") is None
     assert len(repo.list_meetings()) == 1
+
+
+@pytest.mark.parametrize("status, reason", [
+    ("unavailable", "invalid_llm_response"),
+    ("generated", None),
+    ("empty", None),
+])
+def test_summary_status_survives_reopen_and_listing(tmp_path, status, reason):
+    db_path = str(tmp_path / "summary_status.db")
+    repo = SqliteMeetingRepository(db_path)
+    repo.save_meeting(Meeting(
+        "status", "Summary status",
+        SpeakerProfile("a", "Alice", "en"), SpeakerProfile("b", "Bob", "es"),
+    ))
+    repo.save_summary("status", MeetingSummary(
+        executive_summary="",
+        summary_status=status,
+        degraded_reason=reason,
+    ))
+
+    reopened = SqliteMeetingRepository(db_path)
+    for meeting in [reopened.get_meeting("status"), *reopened.list_meetings()]:
+        assert meeting.summary.summary_status == status
+        assert meeting.summary.degraded_reason == reason
+
+
+def test_legacy_summary_migration_preserves_content_without_claiming_generation(tmp_path):
+    db_path = str(tmp_path / "legacy.db")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("""
+            CREATE TABLE summaries (
+                meeting_id TEXT PRIMARY KEY,
+                executive_summary TEXT NOT NULL,
+                key_points_json TEXT NOT NULL DEFAULT '[]',
+                generated_at REAL NOT NULL
+            )
+        """)
+        conn.execute(
+            "INSERT INTO summaries VALUES (?, ?, ?, ?)",
+            ("legacy", "Existing summary", '["Existing point"]', 123.0),
+        )
+    repo = SqliteMeetingRepository(db_path)
+    repo.save_meeting(Meeting(
+        "legacy", "Legacy meeting",
+        SpeakerProfile("a", "Alice", "en"), SpeakerProfile("b", "Bob", "es"),
+    ))
+
+    reopened = SqliteMeetingRepository(db_path)
+    for meeting in [reopened.get_meeting("legacy"), *reopened.list_meetings()]:
+        assert meeting.summary.executive_summary == "Existing summary"
+        assert meeting.summary.key_points == ["Existing point"]
+        assert meeting.summary.generated_at == 123.0
+        assert meeting.summary.summary_status == "legacy"
+        assert meeting.summary.degraded_reason is None
