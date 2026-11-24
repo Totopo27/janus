@@ -9,6 +9,18 @@ from janus.ports.llm_port import ILLMProvider
 
 logger = logging.getLogger(__name__)
 
+PLACEHOLDER_VALUES = frozenset({
+    "participante", "participantes", "tbd", "tba", "n/a", "na", "none", "null",
+    "todo", "seguimiento", "pendiente", "por definir", "por asignar", "sin asignar",
+    "sin definir", "desconocido", "desconocida", "unknown", "responsable",
+    "nombre del responsable", "tarea", "tarea o compromiso acordado",
+})
+
+
+def _is_placeholder(value: str) -> bool:
+    normalized = re.sub(r"\s+", " ", value.strip().strip(".:;,-")).strip().lower()
+    return normalized in PLACEHOLDER_VALUES
+
 
 def _parse_llm_summary(raw_response: str) -> MeetingSummary:
     if not isinstance(raw_response, str):
@@ -40,9 +52,13 @@ def _parse_llm_summary(raw_response: str) -> MeetingSummary:
         due_hint = item.get("due_hint")
         if due_hint is not None:
             require_text(due_hint)
+        assignee = require_text(item.get("assignee"))
+        task = require_text(item.get("task"))
+        if _is_placeholder(assignee) or _is_placeholder(task):
+            raise ValueError("Placeholder action item")
         action_items.append(ActionItem(
-            assignee=require_text(item.get("assignee")),
-            task=require_text(item.get("task")),
+            assignee=assignee,
+            task=task,
             due_hint=due_hint,
         ))
     return MeetingSummary(
@@ -81,7 +97,7 @@ class MeetingNotesService:
         turns = meeting.turns
         if not any(t.original_transcription.text.strip() for t in turns):
             summary = MeetingSummary(
-                executive_summary="La reunión no registró intervenciones transcritas.",
+                executive_summary="La reunión no registró intervenciones de audio.",
                 key_points=[],
                 action_items=[],
                 summary_status="empty",
