@@ -93,6 +93,33 @@ def test_pipeline_orchestrator_skips_empty_audio():
     asyncio.run(run_test())
 
 
+def test_pipeline_orchestrator_stops_after_an_empty_transcription():
+    async def run_test():
+        speaker_a = SpeakerProfile(speaker_id="carlos", name="Carlos", native_language="es")
+        speaker_b = SpeakerProfile(speaker_id="alice", name="Alice", native_language="en")
+        session = Session(session_id="sess_hallucination", speaker_a=speaker_a, speaker_b=speaker_b)
+
+        stt = MockSpeechRecognizer(predefined_text="", language="es")
+        mt = MockTranslator()
+        tts = MockSpeechSynthesizer()
+        orchestrator = PipelineOrchestrator(
+            stt_engine=stt,
+            translation_engine=mt,
+            tts_engine=tts,
+        )
+
+        audio_chunk = AudioChunk(data=b"\x00\x01" * 8000, sample_rate=16000)
+        turn = await orchestrator.process_turn(session, "carlos", audio_chunk)
+
+        assert turn is None
+        assert session.turns == []
+        assert stt.transcribe_called_count == 1
+        assert mt.translate_called_count == 0
+        assert tts.synthesize_called_count == 0
+
+    asyncio.run(run_test())
+
+
 def test_pipeline_orchestrator_multi_turn_fusion():
     from unittest.mock import MagicMock
     from janus.services.conversational_fusion_service import FusedTurn
