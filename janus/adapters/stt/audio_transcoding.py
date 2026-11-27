@@ -53,7 +53,7 @@ def transcode_to_pcm16(
 
     # Check supported container formats
     if normalized_type not in SUPPORTED_COMPRESSED_TYPES and not normalized_type.startswith("audio/"):
-        raise AudioTranscodingError(f"Unsupported audio content type: {content_type}")
+        raise AudioTranscodingError(f"Unsupported audio content type: {actual_content_type}")
 
     output = bytearray()
     try:
@@ -77,14 +77,20 @@ def transcode_to_pcm16(
 
             for converted in resampler.resample(None):
                 output.extend(converted.to_ndarray().astype("<i2", copy=False).tobytes())
+                if len(output) > MAX_PCM_BYTES:
+                    raise AudioTranscodingError("Decoded audio exceeds maximum supported duration")
 
     except AudioTranscodingError:
         raise
     except ImportError:
         logger.warning("PyAV ('av') package not available. Falling back to raw byte handling.")
+        if len(audio_bytes) > MAX_PCM_BYTES:
+            raise AudioTranscodingError("Decoded audio exceeds maximum supported duration")
         return audio_bytes
     except Exception as exc:
         logger.debug(f"PyAV transcoding failed: {exc}. Retaining raw audio bytes.")
+        if len(audio_bytes) > MAX_PCM_BYTES:
+            raise AudioTranscodingError("Decoded audio exceeds maximum supported duration")
         return audio_bytes
 
     if not output:
