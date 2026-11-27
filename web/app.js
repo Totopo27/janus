@@ -9,6 +9,7 @@ let localMicRecorder = null;
 let meetAudioRecorder = null;
 let localAudioChunks = [];
 let isLocalRecording = false;
+let isStartingLocalRecording = false;
 let meetStream = null;
 
 // DOM Elements
@@ -112,8 +113,16 @@ async function initSession() {
   }
 }
 
+let teleprompterRetryCount = 0;
+let teleprompterReconnectTimeout = null;
+
 // 2. Connect to Teleprompter WebSocket
 function connectTeleprompter() {
+  if (teleprompterReconnectTimeout) {
+    clearTimeout(teleprompterReconnectTimeout);
+    teleprompterReconnectTimeout = null;
+  }
+
   const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
   const wsUrl = `${protocol}//${window.location.host}/ws/live-notes/${SESSION_ID}`;
 
@@ -122,15 +131,20 @@ function connectTeleprompter() {
 
   teleprompterSocket.onopen = () => {
     console.log("[TeleprompterSocket] Conexión establecida (En Vivo)");
+    teleprompterRetryCount = 0;
     statusDot.classList.add("connected");
     statusText.textContent = "En Vivo (Conectado)";
   };
 
   teleprompterSocket.onclose = (evt) => {
-    console.warn(`[TeleprompterSocket] Conexión cerrada (código: ${evt.code}). Reintentando en 2s...`);
     statusDot.classList.remove("connected");
     statusText.textContent = "Desconectado (Reintentando...)";
-    setTimeout(connectTeleprompter, 2000);
+
+    // Exponential backoff: 1s, 2s, 4s, 8s, up to 15s max
+    teleprompterRetryCount++;
+    const delay = Math.min(1000 * Math.pow(2, teleprompterRetryCount - 1), 15000);
+    console.warn(`[TeleprompterSocket] Conexión cerrada (código: ${evt.code}). Reintentando en ${delay}ms (intento ${teleprompterRetryCount})...`);
+    teleprompterReconnectTimeout = setTimeout(connectTeleprompter, delay);
   };
 
   teleprompterSocket.onerror = (err) => {
@@ -215,10 +229,13 @@ function connectMeetAudioStream() {
   };
 }
 
+const renderedTurnIds = new Set();
+
 // 4. Handle Incoming Domain Events for the Teleprompter
 function handleIncomingEvent(payload) {
   if (payload.type === "history" && payload.turns && payload.turns.length > 0) {
     feed.innerHTML = "";
+    renderedTurnIds.clear();
     payload.turns.forEach(renderTurnCard);
     return;
   }
@@ -242,8 +259,6 @@ function handleIncomingEvent(payload) {
   }
 
 }
-
-const renderedTurnIds = new Set();
 
 function renderTurnCard(turn) {
   if (!turn) return;
@@ -322,9 +337,11 @@ function renderTurnCard(turn) {
               new_name: newName.trim(),
             })
           });
-          // Update all cards with this speaker_id
-          document.querySelectorAll(`[data-speaker-id="${turn.speaker_id}"]`).forEach(el => {
-            el.textContent = `${newName.trim()} (${srcLang} → ${tgtLang})`;
+          // Update all cards with this speaker_id without selector injection
+          document.querySelectorAll(".speaker-name-display").forEach(el => {
+            if (el.dataset.speakerId === String(turn.speaker_id)) {
+              el.textContent = `${newName.trim()} (${srcLang} → ${tgtLang})`;
+            }
           });
         } catch (e) {
           console.error("Error renombrando orador:", e);
@@ -422,10 +439,36 @@ function playSynthesizedAudio(base64Data, format) {
 }
 
 function escapeHtml(text) {
-  if (!text) return "";
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  if (text === null || text === undefined) return "";
+  return String(text)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
+function buildActionItemElement(item, { idPrefix, dueLabel, ariaLabel }) {
+  const li = document.createElement("li");
+
+  const checkbox = document.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.id = `${idPrefix}${Math.random().toString(36).substring(2, 7)}`;
+  checkbox.checked = Boolean(item.completed);
+  checkbox.setAttribute("aria-label", ariaLabel);
+
+  const span = document.createElement("span");
+  const strong = document.createElement("strong");
+  strong.textContent = `${item.assignee || ""}:`;
+  span.appendChild(strong);
+
+  const due = item.due_hint ? ` (${dueLabel}: ${item.due_hint})` : "";
+  span.appendChild(document.createTextNode(` ${item.task || ""}${due}`));
+
+  li.appendChild(checkbox);
+  li.appendChild(document.createTextNode(" "));
+  li.appendChild(span);
+  return li;
 }
 
 // Universal Audio Channel Selection
@@ -745,6 +788,9 @@ function runManualMeterLoop() {
 }
 
 async function startLocalRecording() {
+  if (isLocalRecording || isStartingLocalRecording) return;
+  isStartingLocalRecording = true;
+
   try {
     if (!localMicSocket || localMicSocket.readyState !== WebSocket.OPEN) {
       console.warn("[AudioCapture] Socket de audio local desconectado. Conectando...");
@@ -799,8 +845,21 @@ async function startLocalRecording() {
       console.log("[AudioCapture] Grabación Manual de Turno iniciada (sin cortes automáticos).");
     }
   } catch (err) {
+    isLocalRecording = false;
+    if (vadStream) {
+      vadStream.getTracks().forEach((track) => track.stop());
+      vadStream = null;
+    }
+    if (vadAudioContext && vadAudioContext.state !== "closed") {
+      vadAudioContext.close().catch(() => {});
+    }
+    vadAudioContext = null;
+    vadSource = null;
+    vadAnalyser = null;
     console.error("[AudioCapture] Error accediendo al micrófono:", err);
     alert("No se pudo acceder al micrófono: " + err.message);
+  } finally {
+    isStartingLocalRecording = false;
   }
 }
 
@@ -937,7 +996,6 @@ function abortAudioCapture() {
   updateVadUI("IDLE", 0);
   updateStudioHud("idle", "ABORTADO", "-- ms");
 }
-}
 
 const abortBtn = document.getElementById("abortBtn");
 if (abortBtn) {
@@ -1001,6 +1059,8 @@ if (scenarioInPerson && scenarioVideocall) {
 }
 
 // 7. Dual-Channel Capture for Remote Videocalls
+let meetAudioIntervalId = null;
+
 async function startMeetAudioCapture() {
   try {
     meetStream = await navigator.mediaDevices.getDisplayMedia({
@@ -1025,8 +1085,13 @@ async function startMeetAudioCapture() {
       }
     };
 
+    if (meetAudioIntervalId) {
+      clearInterval(meetAudioIntervalId);
+      meetAudioIntervalId = null;
+    }
+
     // Slice audio every 2.5s for real-time translation loop
-    const intervalId = setInterval(async () => {
+    meetAudioIntervalId = setInterval(() => {
       if (meetAudioRecorder && meetAudioRecorder.state === "recording") {
         meetAudioRecorder.stop();
         meetAudioRecorder.start();
@@ -1034,28 +1099,35 @@ async function startMeetAudioCapture() {
     }, 2500);
 
     meetAudioRecorder.onstop = async () => {
-      if (chunks.length > 0) {
-        const audioBlob = new Blob(chunks, { type: "audio/webm" });
-        chunks = [];
-        const arrayBuffer = await audioBlob.arrayBuffer();
-        const base64Audio = btoa(
-          new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
-        );
-        const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "auto";
-        const selectedTargetLang = targetLanguageSelect ? targetLanguageSelect.value : "es";
-        if (meetAudioSocket && meetAudioSocket.readyState === WebSocket.OPEN) {
-          meetAudioSocket.send(JSON.stringify({
-            audio_base64: base64Audio,
-            language: selectedLang,
-            target_language: selectedTargetLang,
-          }));
+      try {
+        if (chunks.length > 0) {
+          const audioBlob = new Blob(chunks, { type: "audio/webm" });
+          chunks = [];
+          const arrayBuffer = await audioBlob.arrayBuffer();
+          const base64Audio = btoa(
+            new Uint8Array(arrayBuffer).reduce((data, byte) => data + String.fromCharCode(byte), "")
+          );
+          const selectedLang = inputLanguageSelect ? inputLanguageSelect.value : "auto";
+          const selectedTargetLang = targetLanguageSelect ? targetLanguageSelect.value : "es";
+          if (meetAudioSocket && meetAudioSocket.readyState === WebSocket.OPEN) {
+            meetAudioSocket.send(JSON.stringify({
+              audio_base64: base64Audio,
+              language: selectedLang,
+              target_language: selectedTargetLang,
+            }));
+          }
         }
+      } catch (err) {
+        console.error("[MeetAudioCapture] Error procesando chunk:", err);
       }
     };
 
     meetStream.getVideoTracks().forEach(track => {
       track.onended = () => {
-        clearInterval(intervalId);
+        if (meetAudioIntervalId) {
+          clearInterval(meetAudioIntervalId);
+          meetAudioIntervalId = null;
+        }
         stopMeetAudioCapture();
       };
     });
@@ -1074,8 +1146,17 @@ async function startMeetAudioCapture() {
 }
 
 function stopMeetAudioCapture() {
-  if (meetAudioRecorder && meetAudioRecorder.state !== "inactive") {
-    meetAudioRecorder.stop();
+  if (meetAudioIntervalId) {
+    clearInterval(meetAudioIntervalId);
+    meetAudioIntervalId = null;
+  }
+  if (meetAudioRecorder) {
+    meetAudioRecorder.onstop = null;
+    meetAudioRecorder.ondataavailable = null;
+    if (meetAudioRecorder.state !== "inactive") {
+      meetAudioRecorder.stop();
+    }
+    meetAudioRecorder = null;
   }
   if (meetStream) {
     meetStream.getTracks().forEach(t => t.stop());
@@ -1212,10 +1293,13 @@ if (finalizeBtn) {
 
         modalActionItems.innerHTML = "";
         (summary.action_items || []).forEach(item => {
-          const li = document.createElement("li");
-          const due = item.due_hint ? ` (Límite: ${item.due_hint})` : "";
-          li.innerHTML = `<input type="checkbox" id="action_${Math.random().toString(36).substring(2, 7)}" ${item.completed ? "checked" : ""} aria-label="Estado de tarea: ${escapeHtml(item.task)}" /> <span><strong>${escapeHtml(item.assignee)}:</strong> ${escapeHtml(item.task)}${due}</span>`;
-          modalActionItems.appendChild(li);
+          modalActionItems.appendChild(
+            buildActionItemElement(item, {
+              idPrefix: "action_",
+              dueLabel: "Límite",
+              ariaLabel: `Estado de tarea: ${item.task || ""}`,
+            })
+          );
         });
 
         notesModal.style.display = "flex";
@@ -1242,14 +1326,17 @@ if (closeModalBtn) {
 
 if (downloadMdBtn) {
   downloadMdBtn.addEventListener("click", () => {
-    window.location.href = `/api/meetings/${SESSION_ID}/notes?format=markdown`;
+    window.location.href = `/api/meetings/${SESSION_ID}/notes?notes_format=markdown`;
   });
 }
 
 if (copyNotesBtn) {
   copyNotesBtn.addEventListener("click", async () => {
     try {
-      const res = await fetch(`/api/meetings/${SESSION_ID}/notes?format=markdown`);
+      const res = await fetch(`/api/meetings/${SESSION_ID}/notes?notes_format=markdown`);
+      if (!res.ok) {
+        throw new Error("No se pudo descargar la minuta");
+      }
       const md = await res.text();
       await navigator.clipboard.writeText(md);
       copyNotesBtn.innerHTML = `
@@ -1395,10 +1482,13 @@ function renderLiveNotes(data) {
     } else {
       liveActionItemsList.innerHTML = "";
       data.action_items.forEach(itm => {
-        const li = document.createElement("li");
-        const due = itm.due_hint ? ` (Plazo: ${escapeHtml(itm.due_hint)})` : "";
-        li.innerHTML = `<input type="checkbox" id="live_action_${Math.random().toString(36).substring(2, 7)}" ${itm.completed ? "checked" : ""} aria-label="Tarea para ${escapeHtml(itm.assignee)}: ${escapeHtml(itm.task)}" /> <span><strong>${escapeHtml(itm.assignee)}:</strong> ${escapeHtml(itm.task)}${due}</span>`;
-        liveActionItemsList.appendChild(li);
+        liveActionItemsList.appendChild(
+          buildActionItemElement(itm, {
+            idPrefix: "live_action_",
+            dueLabel: "Plazo",
+            ariaLabel: `Tarea para ${itm.assignee || ""}: ${itm.task || ""}`,
+          })
+        );
       });
     }
   }
@@ -1490,9 +1580,26 @@ if (exportTxtBtn) {
 }
 
 if (exportJsonBtn) {
-  exportJsonBtn.addEventListener("click", () => {
+  exportJsonBtn.addEventListener("click", async () => {
     if (exportDropdownMenu) exportDropdownMenu.style.display = "none";
-    window.location.href = `/api/meetings/${SESSION_ID}`;
+    try {
+      const res = await fetch(`/api/meetings/${SESSION_ID}`);
+      if (!res.ok) {
+        throw new Error("No se pudo exportar la reunión en JSON");
+      }
+      const data = await res.json();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = `${SESSION_ID}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      alert("Error exportando JSON: " + err.message);
+    }
   });
 }
 
