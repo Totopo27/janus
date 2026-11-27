@@ -14,6 +14,8 @@ class SupertonicTtsAdapter(ISpeechSynthesizer):
     Synthesizes studio-grade 44.1 kHz WAV on CPU in ~120 ms.
     """
 
+    MAX_SYNTHESIS_DURATION_SECONDS = 30.0
+
     def __init__(
         self,
         model_dir: Optional[str] = None,
@@ -74,7 +76,7 @@ class SupertonicTtsAdapter(ISpeechSynthesizer):
             import soundfile as sf
             import numpy as np
 
-            duration = max(0.5, len(clean_text) * 0.06)
+            duration = min(self.MAX_SYNTHESIS_DURATION_SECONDS, max(0.5, len(clean_text) * 0.06))
             total_samples = int(self.sample_rate * duration)
             audio_wave = np.zeros(total_samples, dtype=np.float32)
 

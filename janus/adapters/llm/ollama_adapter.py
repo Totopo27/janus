@@ -28,9 +28,16 @@ class OllamaAdapter(ILLMProvider):
     def provider_name(self) -> str:
         return "ollama"
 
+    def _request_url(self, path: str) -> str:
+        return f"{validate_llm_base_url(self.base_url)}{path}"
+
     def health_check(self) -> bool:
         try:
-            resp = httpx.get(f"{self.base_url}/api/version", timeout=3.0)
+            resp = httpx.get(
+                self._request_url("/api/version"),
+                timeout=3.0,
+                follow_redirects=False,
+            )
             return resp.status_code == 200
         except Exception as e:
             logger.debug("Ollama health check failed: %s", e)
@@ -47,13 +54,16 @@ class OllamaAdapter(ILLMProvider):
 
         try:
             resp = httpx.post(
-                f"{self.base_url}/api/generate",
+                self._request_url("/api/generate"),
                 json=payload,
                 timeout=self.timeout_seconds,
+                follow_redirects=False,
             )
             resp.raise_for_status()
             data = resp.json()
             return data.get("response", "")
+        except ValueError:
+            raise
         except Exception as e:
             logger.error("Ollama generate request failed: %s", e)
             raise RuntimeError(f"Error communicating with local Ollama: {e}") from e
@@ -74,7 +84,8 @@ class OllamaAdapter(ILLMProvider):
 
         messages = [{"role": "system", "content": system_content}]
         for msg in history:
-            messages.append({"role": msg.role, "content": msg.content})
+            safe_role = "assistant" if msg.role == "assistant" else "user"
+            messages.append({"role": safe_role, "content": msg.content})
         messages.append({"role": "user", "content": question})
 
         payload = {
@@ -85,13 +96,16 @@ class OllamaAdapter(ILLMProvider):
 
         try:
             resp = httpx.post(
-                f"{self.base_url}/api/chat",
+                self._request_url("/api/chat"),
                 json=payload,
                 timeout=self.timeout_seconds,
+                follow_redirects=False,
             )
             resp.raise_for_status()
             data = resp.json()
             return data.get("message", {}).get("content", "")
+        except ValueError:
+            raise
         except Exception as e:
             logger.error("Ollama chat request failed: %s", e)
             raise RuntimeError(f"Error communicating with local Ollama chat: {e}") from e
