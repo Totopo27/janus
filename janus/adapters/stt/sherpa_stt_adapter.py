@@ -1,10 +1,113 @@
 import logging
 import os
+import re
+import unicodedata
 from typing import Optional
 from janus.domain.models import AudioChunk, TranscriptionResult
 from janus.ports.stt_port import ISpeechRecognizer
 
 logger = logging.getLogger(__name__)
+
+_SHORT_AUDIO_SECONDS = 6.0
+_MAX_SUBTITLE_CREDIT_CHARS = 80
+_NOISE_LABELS = {
+    "[music]",
+    "[musica]",
+    "[applause]",
+    "(music)",
+    "(musica)",
+}
+_EXACT_SCRIPT_GUESSES = {
+    "ご視聴ありがとうございました",
+}
+_SILENCE_GUESSES = {
+    "thanks for watching",
+    "thank you for watching",
+    "thanks for watching bye",
+    "please subscribe",
+    "like and subscribe",
+    "gracias por ver",
+    "gracias por ver el video",
+    "gracias por ver este video",
+    "suscribete al canal",
+    "subtitles by the amara org community",
+    "untertitel der amara org community",
+    "sous titres realises par la communaute d amara org",
+    "продолжение следует",
+}
+_SUBTITLE_CREDIT_PATTERNS = (
+    re.compile(r"^редактор субтитров(?!\w)", re.IGNORECASE),
+    re.compile(r"^субтитры (?:сделал|создавал|подготовил|делал|выполнил|создал)\w*", re.IGNORECASE),
+    re.compile(r"^корректор\s+[А-ЯЁ]\.?\s?[А-ЯЁ]", re.IGNORECASE),
+    re.compile(r"^(?:subtitles|subtitled|captions|captioned|captioning) by(?!\w)", re.IGNORECASE),
+    re.compile(r"^untertitel(?:ung)?\s+(?:im auftrag|des|der|von)(?!\w)", re.IGNORECASE),
+    re.compile(r"^sous[- ]titr(?:age|es?)(?!\w)(?!\s+(?:sont|est|en|du|de la|pour)(?!\w))", re.IGNORECASE),
+    re.compile(r"^sottotitoli (?:creati|a cura|di|e revisione)(?!\w)", re.IGNORECASE),
+    re.compile(r"^subtítulos (?:realizados|por|hechos|creados)(?!\w)", re.IGNORECASE),
+    re.compile(r"^legendas (?:pela|por|feitas)(?!\w)", re.IGNORECASE),
+    re.compile(r"^napisy (?:wykonane|stworzone|przygotowa)", re.IGNORECASE),
+    re.compile(r"^ondertiteling (?:door|van)(?!\w)", re.IGNORECASE),
+    re.compile(r"^字幕(?:由|提供|制作|製作)"),
+)
+
+
+def _normalized_tokens(text: str) -> list[str]:
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    normalized = "".join(
+        character
+        for character in unicodedata.normalize("NFKD", normalized)
+        if not unicodedata.combining(character)
+    )
+    return re.findall(r"[^\W_]+", normalized, flags=re.UNICODE)
+
+
+def _normalized_text(text: str) -> str:
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    return "".join(
+        character
+        for character in unicodedata.normalize("NFKD", normalized)
+        if not unicodedata.combining(character)
+    )
+
+
+def _is_pathological_repetition(tokens: list[str], audio_duration_seconds: float) -> bool:
+    if audio_duration_seconds > _SHORT_AUDIO_SECONDS or len(tokens) < 4:
+        return False
+
+    for phrase_length in range(1, len(tokens) // 4 + 1):
+        if len(tokens) % phrase_length:
+            continue
+        phrase = tokens[:phrase_length]
+        repetitions = len(tokens) // phrase_length
+        if repetitions > 3 and phrase * repetitions == tokens:
+            return True
+    return False
+
+
+def sanitize_transcription(text: str, audio_duration_seconds: float) -> str:
+    """Drop deterministic Whisper artifacts while preserving ordinary speech."""
+    if not text or not text.strip():
+        return ""
+
+    stripped = text.strip()
+    normalized_text = unicodedata.normalize("NFKC", stripped)
+    tokens = _normalized_tokens(stripped)
+    normalized_line = " ".join(tokens)
+
+    if (
+        normalized_text in _EXACT_SCRIPT_GUESSES
+        or _normalized_text(stripped) in _NOISE_LABELS
+        or normalized_line in _SILENCE_GUESSES
+    ):
+        return ""
+    if (
+        len(normalized_text) <= _MAX_SUBTITLE_CREDIT_CHARS
+        and any(pattern.search(normalized_text) for pattern in _SUBTITLE_CREDIT_PATTERNS)
+    ):
+        return ""
+    if _is_pathological_repetition(tokens, audio_duration_seconds):
+        return ""
+    return text
 
 
 class SherpaSttAdapter(ISpeechRecognizer):
@@ -161,8 +264,8 @@ class SherpaSttAdapter(ISpeechRecognizer):
                 text = stream.result.text.strip()
                 detected_lang = getattr(stream.result, "lang", None) or effective_lang or "es"
 
-                # Filter out background noise artifacts
-                if text.lower() in ["[music]", "[musica]", "[applause]", "(music)", "(musica)", ""]:
+                sanitized_text = sanitize_transcription(text, audio.duration_seconds)
+                if not sanitized_text:
                     return TranscriptionResult(
                         text="",
                         language=detected_lang,
@@ -171,9 +274,9 @@ class SherpaSttAdapter(ISpeechRecognizer):
                         confidence=0.0,
                     )
 
-                logger.info(f"Sherpa-ONNX Whisper recognized '{text}' (lang={detected_lang})")
+                logger.info(f"Sherpa-ONNX Whisper recognized '{sanitized_text}' (lang={detected_lang})")
                 return TranscriptionResult(
-                    text=text,
+                    text=sanitized_text,
                     language=detected_lang,
                     start_time=0.0,
                     end_time=audio.duration_seconds,
