@@ -1,14 +1,20 @@
+import asyncio
 import base64
 import json
 import logging
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
-from janus.adapters.stt.audio_transcoding import transcode_to_pcm16
+from janus.adapters.stt.audio_transcoding import AudioTranscodingError, transcode_to_pcm16
+from janus.api.security import is_allowed_origin
 from janus.domain.models import AudioChunk
 from janus.adapters.transport.websocket_broadcaster import WebSocketBroadcaster
 from janus.services.pipeline_orchestrator import PipelineOrchestrator
 from janus.services.session_service import SessionService
 
 logger = logging.getLogger(__name__)
+
+# Maximum allowed audio payload per turn: 10 MB (safe ceiling for 120s of compressed audio or PCM)
+MAX_AUDIO_CHUNK_BYTES = 10 * 1024 * 1024
+MAX_AUDIO_TEXT_MESSAGE_BYTES = ((MAX_AUDIO_CHUNK_BYTES + 2) // 3) * 4 + 65536
 
 
 def create_websocket_router(
@@ -24,6 +30,11 @@ def create_websocket_router(
         WebSocket channel for the live teleprompter display.
         Streams real-time transcriptions, translations, and notes.
         """
+        if not is_allowed_origin(websocket.headers.get("origin")):
+            logger.warning("Rejected live-notes WebSocket from disallowed origin: %s", websocket.headers.get("origin"))
+            await websocket.close(code=1008)
+            return
+
         await websocket.accept()
         await broadcaster.connect(session_id, websocket)
 
@@ -59,6 +70,11 @@ def create_websocket_router(
         WebSocket channel for streaming client audio to the Janus S2ST pipeline.
         Can receive binary PCM/WAV chunks or JSON packets.
         """
+        if not is_allowed_origin(websocket.headers.get("origin")):
+            logger.warning("Rejected audio-stream WebSocket from disallowed origin: %s", websocket.headers.get("origin"))
+            await websocket.close(code=1008)
+            return
+
         await websocket.accept()
         logger.info(f"Audio stream client '{speaker_id}' connected to session '{session_id}'")
         session = session_service.get_session(session_id)
@@ -78,11 +94,37 @@ def create_websocket_router(
                 requested_lang = None
                 target_lang = None
                 if "bytes" in message and message["bytes"]:
-                    audio_bytes = message["bytes"]
+                    raw_bytes = message["bytes"]
+                    if len(raw_bytes) > MAX_AUDIO_CHUNK_BYTES:
+                        logger.warning(
+                            f"[{session_id}:{speaker_id}] Binary audio frame exceeds max allowed size "
+                            f"({len(raw_bytes)} > {MAX_AUDIO_CHUNK_BYTES} bytes). Dropping payload."
+                        )
+                        await websocket.send_text(
+                            json.dumps({
+                                "type": "error",
+                                "error": "Audio payload exceeds maximum allowed size (10 MB)",
+                            })
+                        )
+                        continue
+                    audio_bytes = raw_bytes
                     logger.info(f"[{session_id}:{speaker_id}] Received raw binary audio chunk ({len(audio_bytes)} bytes)")
                 elif "text" in message and message["text"]:
+                    raw_text = message["text"]
+                    if len(raw_text.encode("utf-8")) > MAX_AUDIO_TEXT_MESSAGE_BYTES:
+                        logger.warning(
+                            f"[{session_id}:{speaker_id}] Text audio frame exceeds max allowed size "
+                            f"(> {MAX_AUDIO_TEXT_MESSAGE_BYTES} bytes). Dropping payload."
+                        )
+                        await websocket.send_text(
+                            json.dumps({
+                                "type": "error",
+                                "error": "Audio payload exceeds maximum allowed size (10 MB)",
+                            })
+                        )
+                        continue
                     try:
-                        parsed = json.loads(message["text"])
+                        parsed = json.loads(raw_text)
                         if "audio_base64" in parsed:
                             audio_bytes = base64.b64decode(parsed["audio_base64"])
                             mime_type = parsed.get("mime_type", mime_type)
@@ -98,7 +140,25 @@ def create_websocket_router(
                     logger.warning(f"[{session_id}:{speaker_id}] Empty audio bytes received, skipping processing turn.")
                     continue
 
-                pcm16_bytes = transcode_to_pcm16(audio_bytes, format_hint=mime_type)
+                if len(audio_bytes) > MAX_AUDIO_CHUNK_BYTES:
+                    logger.warning(
+                        f"[{session_id}:{speaker_id}] Audio chunk exceeds max allowed size "
+                        f"({len(audio_bytes)} > {MAX_AUDIO_CHUNK_BYTES} bytes). Dropping payload."
+                    )
+                    await websocket.send_text(
+                        json.dumps({
+                            "type": "error",
+                            "error": "Audio payload exceeds maximum allowed size (10 MB)",
+                        })
+                    )
+                    continue
+
+                try:
+                    pcm16_bytes = await asyncio.to_thread(transcode_to_pcm16, audio_bytes, format_hint=mime_type)
+                except AudioTranscodingError as ate:
+                    logger.warning(f"[{session_id}:{speaker_id}] Audio transcoding rejected: {ate}")
+                    await websocket.send_text(json.dumps({"type": "error", "error": str(ate)}))
+                    continue
                 logger.info(f"[{session_id}:{speaker_id}] Transcoded audio ({len(audio_bytes)} bytes -> {len(pcm16_bytes)} pcm16 bytes). Dispatching to S2ST Pipeline Orchestrator...")
                 chunk = AudioChunk(data=pcm16_bytes, sample_rate=16000)
                 turn = await orchestrator.process_turn(

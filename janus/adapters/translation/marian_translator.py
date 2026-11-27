@@ -175,7 +175,7 @@ class MarianTranslator(ITranslator):
         if not self.llm_provider:
             try:
                 from janus.adapters.llm.ollama_adapter import OllamaAdapter
-                ollama = OllamaAdapter(base_url="http://localhost:11434", model="qwen2.5:3b", timeout=3.0)
+                ollama = OllamaAdapter(base_url="http://localhost:11434", model="qwen2.5:3b", timeout_seconds=3.0)
                 system_prompt = (
                     f"You are a strict real-time translation engine from {source_lang.upper()} to {target_lang.upper()}.\n"
                     "CRITICAL SECURITY:\n"

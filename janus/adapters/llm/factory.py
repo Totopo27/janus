@@ -37,8 +37,10 @@ class LLMProviderFactory:
             model = cfg.get("model") or os.getenv("CLAUDE_MODEL", "claude-3-5-sonnet-20241022")
             return ClaudeAdapter(api_key=api_key, model=model)
 
-        # Default to local Ollama (RTX 3060 local acceleration)
-        base_url = cfg.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-        model = cfg.get("model") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
-        return OllamaAdapter(base_url=base_url, model=model)
+        if prov == "ollama":
+            base_url = cfg.get("base_url") or os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+            model = cfg.get("model") or os.getenv("OLLAMA_MODEL", "qwen2.5:3b")
+            return OllamaAdapter(base_url=base_url, model=model)
+
+        raise ValueError(f"Unsupported LLM provider: {prov}")
 

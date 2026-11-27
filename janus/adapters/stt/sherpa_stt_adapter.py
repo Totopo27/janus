@@ -1,12 +1,19 @@
+from collections import OrderedDict
 import logging
 import os
 import re
+import threading
 import unicodedata
-from typing import Optional
+from typing import Any, Optional
 from janus.domain.models import AudioChunk, TranscriptionResult
 from janus.ports.stt_port import ISpeechRecognizer
 
 logger = logging.getLogger(__name__)
+
+SUPPORTED_WHISPER_LANGUAGES = frozenset({
+    "", "es", "en", "fr", "de", "pt", "it", "ja", "ko", "zh",
+    "ru", "ar", "hi", "nl", "pl", "tr", "uk", "vi", "sv", "ca", "gl", "eu",
+})
 
 _SHORT_AUDIO_SECONDS = 6.0
 _MAX_SUBTITLE_CREDIT_CHARS = 80
@@ -137,7 +144,9 @@ class SherpaSttAdapter(ISpeechRecognizer):
         self.model_type = model_type
         self.num_threads = num_threads
         self.default_language = default_language
-        self._recognizers: dict[str, any] = {}
+        self._recognizers: OrderedDict[str, Any] = OrderedDict()
+        self._recognizer_lock = threading.Lock()
+        self._max_cached_recognizers = 4
         self._resolved_enc = None
         self._resolved_dec = None
         self._resolved_tok = None
@@ -182,58 +191,76 @@ class SherpaSttAdapter(ISpeechRecognizer):
                 logger.info(f"Sherpa-ONNX auto-selected Whisper model: {cand_enc}")
                 return
 
+    def _normalize_language(self, language: Optional[str]) -> str:
+        raw = (language or self.default_language or "es").strip().lower()
+        if raw in {"auto", "none", ""}:
+            return ""
+        primary = raw.replace("_", "-").split("-", 1)[0]
+        if primary in SUPPORTED_WHISPER_LANGUAGES:
+            return primary
+        logger.warning("Unsupported STT language '%s'; falling back to default.", raw)
+        default_raw = (self.default_language or "").strip().lower()
+        default_primary = default_raw.replace("_", "-").split("-", 1)[0]
+        if default_primary in SUPPORTED_WHISPER_LANGUAGES:
+            return default_primary
+        return ""
+
     def _get_recognizer(self, language: Optional[str] = None):
-        if self._is_fallback:
-            return None
+        with self._recognizer_lock:
+            if self._is_fallback:
+                return None
 
-        # Normalize language key
-        lang_key = (language or self.default_language or "es").strip().lower()
-        if lang_key in ["auto", "none", ""]:
-            lang_key = ""
-        elif lang_key.startswith("es"):
-            lang_key = "es"
-        elif lang_key.startswith("en"):
-            lang_key = "en"
+            lang_key = self._normalize_language(language)
+            cache_key = "transducer" if self.model_type != "whisper" else lang_key
+            if cache_key in self._recognizers:
+                self._recognizers.move_to_end(cache_key)
+                return self._recognizers[cache_key]
 
-        if lang_key in self._recognizers:
-            return self._recognizers[lang_key]
-
-        try:
-            import sherpa_onnx
-            self._resolve_model_paths()
-
-            if self._resolved_enc and self._resolved_dec and self._resolved_tok:
-                recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
-                    encoder=self._resolved_enc,
-                    decoder=self._resolved_dec,
-                    tokens=self._resolved_tok,
-                    language=lang_key,
-                    num_threads=self.num_threads,
-                )
-                self._recognizers[lang_key] = recognizer
-                logger.info(
-                    f"Sherpa-ONNX Whisper recognizer initialized from {os.path.basename(self._resolved_enc)} "
-                    f"[language='{lang_key or 'auto'}']"
-                )
-                return recognizer
-            elif self.encoder and os.path.exists(self.encoder):
-                recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
-                    tokens=self.tokens,
-                    encoder=self.encoder,
-                    decoder=self.decoder,
-                    joiner=self.joiner,
-                    num_threads=self.num_threads,
-                )
-                self._recognizers["transducer"] = recognizer
-                return recognizer
-            else:
-                logger.warning("No valid Sherpa-ONNX model files found. STT operating in fallback mode.")
+            try:
+                import sherpa_onnx
+            except ImportError as exc:
+                logger.warning(f"Sherpa-ONNX package unavailable: {exc}.")
                 self._is_fallback = True
                 return None
-        except Exception as e:
-            logger.warning(f"Could not load Sherpa-ONNX native recognizer: {e}.")
-            self._is_fallback = True
-            return None
+
+            try:
+                self._resolve_model_paths()
+
+                if self._resolved_enc and self._resolved_dec and self._resolved_tok:
+                    recognizer = sherpa_onnx.OfflineRecognizer.from_whisper(
+                        encoder=self._resolved_enc,
+                        decoder=self._resolved_dec,
+                        tokens=self._resolved_tok,
+                        language=lang_key,
+                        num_threads=self.num_threads,
+                    )
+                    while len(self._recognizers) >= self._max_cached_recognizers:
+                        self._recognizers.popitem(last=False)
+                    self._recognizers[lang_key] = recognizer
+                    logger.info(
+                        f"Sherpa-ONNX Whisper recognizer initialized from {os.path.basename(self._resolved_enc)} "
+                        f"[language='{lang_key or 'auto'}']"
+                    )
+                    return recognizer
+                elif self.encoder and os.path.exists(self.encoder):
+                    recognizer = sherpa_onnx.OfflineRecognizer.from_transducer(
+                        tokens=self.tokens,
+                        encoder=self.encoder,
+                        decoder=self.decoder,
+                        joiner=self.joiner,
+                        num_threads=self.num_threads,
+                    )
+                    while len(self._recognizers) >= self._max_cached_recognizers:
+                        self._recognizers.popitem(last=False)
+                    self._recognizers["transducer"] = recognizer
+                    return recognizer
+                else:
+                    logger.warning("No valid Sherpa-ONNX model files found. STT operating in fallback mode.")
+                    self._is_fallback = True
+                    return None
+            except Exception as e:
+                logger.warning(f"Could not load Sherpa-ONNX native recognizer: {e}.")
+                return None
 
     def transcribe(
         self,
@@ -250,7 +277,16 @@ class SherpaSttAdapter(ISpeechRecognizer):
         if recognizer is not None and not self._is_fallback:
             try:
                 import numpy as np
-                samples = np.frombuffer(audio.data, dtype=np.int16).astype(np.float32) / 32768.0
+                usable_len = len(audio.data) - (len(audio.data) % 2)
+                if usable_len == 0:
+                    return TranscriptionResult(
+                        text="",
+                        language=effective_lang or "es",
+                        start_time=0.0,
+                        end_time=audio.duration_seconds,
+                        confidence=0.0,
+                    )
+                samples = np.frombuffer(audio.data[:usable_len], dtype=np.int16).astype(np.float32) / 32768.0
 
                 # Peak amplitude normalization for robust Whisper token activation on laptop/browser mics
                 peak = float(np.max(np.abs(samples))) if len(samples) > 0 else 0.0

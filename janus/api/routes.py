@@ -1,5 +1,10 @@
+import asyncio
+import hmac
+import inspect
+import os
+import re
 from typing import List, Optional, Dict, Any, Literal
-from fastapi import APIRouter, HTTPException, Response, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from pydantic import BaseModel, Field
 from janus.domain.models import SpeakerProfile, Meeting, ChatMessage, SearchResult, ActionItem, MeetingSummary
 from janus.services.session_service import SessionService
@@ -78,9 +83,14 @@ class SearchResultSchema(BaseModel):
     created_at: float
 
 
+class ChatHistoryItem(BaseModel):
+    role: Literal["user", "assistant"] = "user"
+    content: str = ""
+
+
 class MeetingChatRequest(BaseModel):
     question: str
-    history: Optional[List[Dict[str, Any]]] = None
+    history: Optional[List[ChatHistoryItem]] = None
 
 
 class MeetingChatResponse(BaseModel):
@@ -382,12 +392,14 @@ def create_api_router(
         if not m:
             raise HTTPException(status_code=404, detail="Meeting not found")
 
+        safe_filename = re.sub(r"[^A-Za-z0-9._-]", "_", meeting_id) or "meeting"
+
         if notes_format in ("markdown", "md"):
             markdown = notes_service.export_as_markdown(meeting_id)
             return Response(
                 content=markdown,
-                media_type="text/markdown",
-                headers={"Content-Disposition": f'attachment; filename="{meeting_id}_notes.md"'}
+                media_type="text/markdown; charset=utf-8",
+                headers={"Content-Disposition": f'attachment; filename="{safe_filename}_notes.md"'}
             )
 
         if notes_format in ("txt", "text"):
@@ -395,7 +407,7 @@ def create_api_router(
             return Response(
                 content=plain_text,
                 media_type="text/plain; charset=utf-8",
-                headers={"Content-Disposition": f'attachment; filename="{meeting_id}_notes.txt"'}
+                headers={"Content-Disposition": f'attachment; filename="{safe_filename}_notes.txt"'}
             )
 
         if not m.summary:
@@ -413,7 +425,7 @@ def create_api_router(
         history_msgs = []
         if request.history:
             for h in request.history:
-                history_msgs.append(ChatMessage(role=h.get("role", "user"), content=h.get("content", "")))
+                history_msgs.append(ChatMessage(role=h.role, content=h.content))
 
         try:
             answer = chat_service.ask(
@@ -456,11 +468,15 @@ def create_api_router(
         )
 
     @router.post("/meetings/{meeting_id}/live-notes/refresh", response_model=LiveNotesResponse)
-    def refresh_live_notes(meeting_id: str):
+    async def refresh_live_notes(meeting_id: str):
         """Forces an immediate synthesis update of live notes using LLM."""
         if not live_notetaker:
             raise HTTPException(status_code=503, detail="Live notetaker service not configured")
-        notes = live_notetaker.update_notes(meeting_id)
+        update_notes_async = getattr(live_notetaker, "update_notes_async", None)
+        if callable(update_notes_async) and inspect.iscoroutinefunction(update_notes_async):
+            notes = await update_notes_async(meeting_id)
+        else:
+            notes = await asyncio.to_thread(live_notetaker.update_notes, meeting_id)
         return LiveNotesResponse(
             meeting_id=notes.meeting_id,
             current_topic=notes.current_topic,
@@ -598,10 +614,13 @@ def create_api_router(
         )
 
     @router.post("/system/llm-config", response_model=LLMConfigResponse)
-    def configure_llm(request: LLMConfigRequest):
+    def configure_llm(request: LLMConfigRequest, http_request: Request):
         """Dynamically switches or reconfigures the active BYOM LLM provider (Ollama / Gemini)."""
         if not chat_service or not llm_factory:
             raise HTTPException(status_code=503, detail="Chat service or LLM factory not configured")
+
+        if not _is_llm_config_authorized(http_request):
+            raise HTTPException(status_code=403, detail="LLM reconfiguration is restricted to localhost")
 
         config_dict = {}
         if request.api_key:
@@ -611,8 +630,14 @@ def create_api_router(
         if request.model:
             config_dict["model"] = request.model
 
-        new_provider = llm_factory.create(provider=request.provider, config=config_dict)
+        try:
+            new_provider = llm_factory.create(provider=request.provider, config=config_dict)
+        except ValueError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
         chat_service.llm_provider = new_provider
+        if notes_service and hasattr(notes_service, "llm_provider"):
+            notes_service.llm_provider = new_provider
         if live_notetaker and hasattr(live_notetaker, "llm_provider"):
             live_notetaker.llm_provider = new_provider
         if fusion_service and hasattr(fusion_service, "llm_provider"):
@@ -628,6 +653,26 @@ def create_api_router(
         )
 
     return router
+
+
+def _is_llm_config_authorized(http_request: Request) -> bool:
+    """Restricts server-wide LLM reconfiguration to localhost unless authorized via token or opt-in."""
+    client_host = http_request.client.host if http_request.client else ""
+    if client_host in {"127.0.0.1", "::1", "localhost", "testclient"}:
+        return True
+
+    if os.environ.get("JANUS_ALLOW_REMOTE_LLM_CONFIG", "").strip().lower() in {"1", "true", "yes"}:
+        return True
+
+    admin_token = os.environ.get("JANUS_ADMIN_TOKEN", "").strip()
+    if admin_token:
+        auth_header = http_request.headers.get("authorization", "")
+        if auth_header.startswith("Bearer "):
+            provided_token = auth_header[7:].strip()
+            if hmac.compare_digest(provided_token, admin_token):
+                return True
+
+    return False
 
 
 def _build_meeting_response(m: Meeting) -> MeetingResponse:

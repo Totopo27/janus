@@ -1,3 +1,4 @@
+import contextlib
 import json
 import logging
 import re
@@ -37,8 +38,17 @@ class SqliteMeetingRepository(IMeetingRepository):
         conn.execute("PRAGMA busy_timeout=5000;")
         return conn
 
+    @contextlib.contextmanager
+    def _connection(self):
+        conn = self._get_connection()
+        try:
+            with conn:
+                yield conn
+        finally:
+            conn.close()
+
     def _init_db(self) -> None:
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             # WAL mode only needs to be set once — it persists in the DB file header
             conn.execute("PRAGMA journal_mode=WAL;")
             conn.executescript("""
@@ -116,6 +126,8 @@ class SqliteMeetingRepository(IMeetingRepository):
 
                 CREATE TRIGGER IF NOT EXISTS trg_turns_au AFTER UPDATE ON turns BEGIN
                     UPDATE turns_fts SET
+                        meeting_id = new.meeting_id,
+                        speaker_id = new.speaker_id,
                         original_text = new.original_text,
                         translated_text = new.translated_text
                     WHERE turn_id = old.turn_id;
@@ -135,7 +147,7 @@ class SqliteMeetingRepository(IMeetingRepository):
                 conn.execute("ALTER TABLE summaries ADD COLUMN degraded_reason TEXT;")
 
     def save_meeting(self, meeting: Meeting) -> None:
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             conn.execute("""
                 INSERT INTO meetings (
                     meeting_id, title, topic_key,
@@ -175,14 +187,26 @@ class SqliteMeetingRepository(IMeetingRepository):
 
 
     def save_turn(self, meeting_id: str, turn: ConversationTurn) -> None:
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             conn.execute("""
-                INSERT OR REPLACE INTO turns (
+                INSERT INTO turns (
                     turn_id, meeting_id, speaker_id,
                     original_text, source_lang,
                     translated_text, target_lang,
                     latency_ms, start_time, end_time, confidence, created_at
                 ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(turn_id) DO UPDATE SET
+                    meeting_id=excluded.meeting_id,
+                    speaker_id=excluded.speaker_id,
+                    original_text=excluded.original_text,
+                    source_lang=excluded.source_lang,
+                    translated_text=excluded.translated_text,
+                    target_lang=excluded.target_lang,
+                    latency_ms=excluded.latency_ms,
+                    start_time=excluded.start_time,
+                    end_time=excluded.end_time,
+                    confidence=excluded.confidence,
+                    created_at=excluded.created_at
             """, (
                 turn.turn_id,
                 meeting_id,
@@ -199,7 +223,7 @@ class SqliteMeetingRepository(IMeetingRepository):
             ))
 
     def save_summary(self, meeting_id: str, summary: MeetingSummary) -> None:
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             # 1. Update meeting status to completed
             conn.execute("""
                 UPDATE meetings SET status = 'completed', ended_at = ? WHERE meeting_id = ?
@@ -235,7 +259,7 @@ class SqliteMeetingRepository(IMeetingRepository):
                 ))
 
     def get_meeting(self, meeting_id: str) -> Optional[Meeting]:
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             m_row = conn.execute("SELECT * FROM meetings WHERE meeting_id = ?", (meeting_id,)).fetchone()
             if not m_row:
                 return None
@@ -321,7 +345,7 @@ class SqliteMeetingRepository(IMeetingRepository):
 
     def list_meetings(self) -> List[Meeting]:
         """Returns all meetings ordered by creation date, without loading full turn history."""
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             rows = conn.execute(
                 "SELECT * FROM meetings ORDER BY created_at DESC"
             ).fetchall()
@@ -411,7 +435,7 @@ class SqliteMeetingRepository(IMeetingRepository):
             return meetings
 
     def delete_meeting(self, meeting_id: str) -> bool:
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             cursor = conn.execute("DELETE FROM meetings WHERE meeting_id = ?", (meeting_id,))
             return cursor.rowcount > 0
 
@@ -445,12 +469,18 @@ class SqliteMeetingRepository(IMeetingRepository):
 
         if topic_key and topic_key.strip():
             cleaned_topic = topic_key.strip()
-            sql += " AND (m.topic_key = ? OR m.topic_key LIKE ?)"
-            params.extend([cleaned_topic, f"{cleaned_topic}/%"])
+            escaped_topic = (
+                cleaned_topic
+                .replace("\\", "\\\\")
+                .replace("%", "\\%")
+                .replace("_", "\\_")
+            )
+            sql += " AND (m.topic_key = ? OR m.topic_key LIKE ? ESCAPE '\\')"
+            params.extend([cleaned_topic, f"{escaped_topic}/%"])
 
         sql += " ORDER BY rank, t.created_at DESC LIMIT 50"
 
-        with self._get_connection() as conn:
+        with self._connection() as conn:
             try:
                 rows = conn.execute(sql, params).fetchall()
             except sqlite3.OperationalError as e:

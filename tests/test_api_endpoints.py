@@ -346,3 +346,25 @@ def test_unavailable_summary_status_is_exposed_and_preserved_on_manual_edits(tmp
         assert edited.json()["summary"]["degraded_reason"] == "no_llm_provider"
 
 
+def test_create_app_default_broadcaster_handles_live_notes_ws(tmp_path):
+    db_path = str(tmp_path / "default_ws.db")
+    meeting_repo = SqliteMeetingRepository(db_path=db_path)
+    orchestrator = PipelineOrchestrator(
+        stt_engine=MockSpeechRecognizer(),
+        translation_engine=MockTranslator(),
+        tts_engine=MockSpeechSynthesizer(),
+        storage_repo=meeting_repo,
+    )
+
+    app = create_app(meeting_repo=meeting_repo, orchestrator=orchestrator)
+    client = TestClient(app)
+
+    with client.websocket_connect("/ws/live-notes/sess_default_ws") as ws:
+        payload = ws.receive_json()
+        assert payload == {
+            "type": "history",
+            "session_id": "sess_default_ws",
+            "turns": [],
+        }
+
+

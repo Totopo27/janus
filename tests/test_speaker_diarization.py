@@ -72,8 +72,9 @@ def test_diarization_two_speakers_strict_clustering():
     }
 
     # Add two distinct speaker profiles
-    emb1 = np.ones(192, dtype=np.float32)
-    emb2 = -np.ones(192, dtype=np.float32)
+    dim = service._extractor.dim
+    emb1 = np.ones(dim, dtype=np.float32)
+    emb2 = -np.ones(dim, dtype=np.float32)
     manager.add("speaker_1", emb1)
     manager.add("speaker_2", emb2)
 

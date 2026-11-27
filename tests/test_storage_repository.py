@@ -1,3 +1,4 @@
+import concurrent.futures
 import os
 import sqlite3
 import pytest
@@ -172,3 +173,68 @@ def test_legacy_summary_migration_preserves_content_without_claiming_generation(
         assert meeting.summary.generated_at == 123.0
         assert meeting.summary.summary_status == "legacy"
         assert meeting.summary.degraded_reason is None
+
+
+def test_sqlite_connections_are_closed_after_queries(tmp_path):
+    db_file = str(tmp_path / "test_closed.db")
+    repo = SqliteMeetingRepository(db_path=db_file)
+    created_conns = []
+    original_get_conn = repo._get_connection
+
+    def tracking_get_conn():
+        conn = original_get_conn()
+        created_conns.append(conn)
+        return conn
+
+    repo._get_connection = tracking_get_conn
+
+    speaker_a = SpeakerProfile(speaker_id="a", name="A", native_language="es")
+    speaker_b = SpeakerProfile(speaker_id="b", name="B", native_language="en")
+    repo.save_meeting(Meeting(meeting_id="m_close", title="Close Test", speaker_a=speaker_a, speaker_b=speaker_b))
+    repo.save_turn(
+        "m_close",
+        ConversationTurn(
+            turn_id="t_close_1",
+            session_id="m_close",
+            speaker_id="a",
+            original_transcription=TranscriptionResult("hola", "es"),
+            translation=TranslationResult("hola", "es", "hello", "en"),
+        ),
+    )
+    repo.get_meeting("m_close")
+    repo.list_meetings()
+    repo.search_turns("hola")
+    repo.save_summary("m_close", MeetingSummary(executive_summary="ok"))
+    repo.delete_meeting("m_close")
+
+    assert len(created_conns) == 7
+    for conn in created_conns:
+        with pytest.raises(sqlite3.ProgrammingError):
+            conn.execute("SELECT 1")
+
+
+def test_sqlite_concurrent_writes_succeed_without_lock_errors(tmp_path):
+    db_file = str(tmp_path / "test_concurrent.db")
+    repo = SqliteMeetingRepository(db_path=db_file)
+    speaker_a = SpeakerProfile(speaker_id="a", name="A", native_language="es")
+    speaker_b = SpeakerProfile(speaker_id="b", name="B", native_language="en")
+    repo.save_meeting(Meeting(meeting_id="m_conc", title="Concurrent", speaker_a=speaker_a, speaker_b=speaker_b))
+
+    def write_turn(idx: int):
+        turn = ConversationTurn(
+            turn_id=f"t_conc_{idx}",
+            session_id="m_conc",
+            speaker_id="a" if idx % 2 == 0 else "b",
+            original_transcription=TranscriptionResult(f"Mensaje {idx}", "es"),
+            translation=TranslationResult(f"Mensaje {idx}", "es", f"Message {idx}", "en"),
+        )
+        repo.save_turn("m_conc", turn)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=8) as pool:
+        futures = [pool.submit(write_turn, i) for i in range(40)]
+        for fut in futures:
+            fut.result()
+
+    retrieved = repo.get_meeting("m_conc")
+    assert retrieved is not None
+    assert len(retrieved.turns) == 40

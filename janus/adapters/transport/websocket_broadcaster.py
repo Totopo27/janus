@@ -1,7 +1,7 @@
 import asyncio
 import json
 import logging
-from typing import Any, Dict, Set
+from typing import Any, Dict, Optional, Set
 from fastapi import WebSocket
 from janus.domain.events import DomainEvent
 from janus.ports.broadcaster_port import IEventBroadcaster
@@ -54,7 +54,7 @@ class WebSocketBroadcaster(IEventBroadcaster):
         await self.broadcast_raw(session_id, payload)
 
     async def broadcast_raw(self, session_id: str, payload: Dict[str, Any]) -> None:
-        """Sends raw JSON payload to all active session WebSockets."""
+        """Sends raw JSON payload concurrently to all active session WebSockets."""
         async with self._lock:
             sockets = list(self._connections.get(session_id, []))
 
@@ -62,17 +62,23 @@ class WebSocketBroadcaster(IEventBroadcaster):
             return
 
         message = json.dumps(payload)
-        dead_sockets = []
 
-        for ws in sockets:
+        async def _safe_send(ws: WebSocket) -> Optional[WebSocket]:
             try:
-                await ws.send_text(message)
+                # 5 second timeout to prevent stalled or slow clients from blocking
+                await asyncio.wait_for(ws.send_text(message), timeout=5.0)
+                return None
             except Exception as e:
                 logger.warning(f"Failed to send to WebSocket in session {session_id}: {e}")
-                dead_sockets.append(ws)
+                return ws
+
+        results = await asyncio.gather(*[_safe_send(ws) for ws in sockets])
+        dead_sockets = [ws for ws in results if ws is not None]
 
         if dead_sockets:
             async with self._lock:
                 for ws in dead_sockets:
                     if session_id in self._connections:
                         self._connections[session_id].discard(ws)
+                if session_id in self._connections and not self._connections[session_id]:
+                    del self._connections[session_id]

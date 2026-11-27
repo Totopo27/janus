@@ -41,6 +41,8 @@ def validate_llm_base_url(base_url: str) -> str:
         raise ValueError("LLM base URL hostname did not resolve")
 
     for address in addresses:
+        if isinstance(address, ipaddress.IPv6Address) and address.ipv4_mapped is not None:
+            address = address.ipv4_mapped
         if address in METADATA_ADDRESSES:
             raise ValueError("Cloud metadata endpoints are not allowed")
         if address.is_loopback:
@@ -48,14 +50,11 @@ def validate_llm_base_url(base_url: str) -> str:
                 continue
             raise ValueError("DNS names resolving to loopback addresses are not allowed")
         if (
-            address.is_private
-            or address.is_link_local
-            or address.is_reserved
+            not address.is_global
             or address.is_multicast
+            or address.is_reserved
             or address.is_unspecified
         ):
-            if explicit_loopback:
-                continue
             raise ValueError("Private and non-routable LLM endpoints are not allowed")
 
     return normalized

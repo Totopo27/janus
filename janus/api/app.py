@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 logger = logging.getLogger(__name__)
 from fastapi.responses import FileResponse
 from janus.api.routes import create_api_router
+from janus.api.security import ALLOWED_ORIGIN_REGEX
 from janus.api.websockets import create_websocket_router
 from janus.services.session_service import SessionService
 from janus.services.pipeline_orchestrator import PipelineOrchestrator
@@ -55,11 +56,19 @@ def create_app(
     # matching standard RFC 1918 (192.168.x.x, 10.x.x.x, 172.16-31.x.x) and localhost.
     app.add_middleware(
         CORSMiddleware,
-        allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|192\.168\.\d+\.\d+|10\.\d+\.\d+\.\d+|172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+)(:\d+)?$",
+        allow_origin_regex=ALLOWED_ORIGIN_REGEX,
         allow_credentials=False,
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    @app.middleware("http")
+    async def add_security_headers(request, call_next):
+        response = await call_next(request)
+        response.headers.setdefault("X-Content-Type-Options", "nosniff")
+        response.headers.setdefault("X-Frame-Options", "DENY")
+        response.headers.setdefault("Referrer-Policy", "no-referrer")
+        return response
 
     # Initialize BYOM & Chat service
     llm_factory = LLMProviderFactory()
@@ -83,6 +92,9 @@ def create_app(
         notes_service = MeetingNotesService(repository=meeting_repo, llm_provider=llm_provider)
     if chat_service is None:
         chat_service = MeetingChatService(repository=meeting_repo, llm_provider=llm_provider)
+
+    if broadcaster is None:
+        broadcaster = WebSocketBroadcaster()
 
     # Initialize Live Notetaker
     if live_notetaker is None:

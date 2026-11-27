@@ -39,7 +39,12 @@ class GeminiAdapter(ILLMProvider):
             return False
         try:
             url = self.BASE_URL
-            resp = httpx.get(url, headers=self._auth_headers(), timeout=5.0)
+            resp = httpx.get(
+                url,
+                headers=self._auth_headers(),
+                timeout=5.0,
+                follow_redirects=False,
+            )
             return resp.status_code == 200
         except Exception as e:
             logger.debug("Gemini health check failed: %s", e)
@@ -53,9 +58,49 @@ class GeminiAdapter(ILLMProvider):
         }
 
     def _candidate_models(self) -> List[str]:
-        preferred = ["gemini-3.5-flash", "gemini-3.5-flash-lite"]
+        preferred = [m for m in [self.model, "gemini-3.5-flash", "gemini-3.5-flash-lite"] if m]
         fallbacks = ["gemini-flash-latest", "gemini-3.8-flash"]
         return list(dict.fromkeys(preferred + fallbacks))
+
+    def _post_with_fallback(self, payload: dict, context_label: str) -> str:
+        last_error = None
+        for model_name in self._candidate_models():
+            url = f"{self.BASE_URL}/{model_name}:generateContent"
+            try:
+                resp = httpx.post(
+                    url,
+                    json=payload,
+                    headers=self._auth_headers(),
+                    timeout=self.timeout_seconds,
+                    follow_redirects=False,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    candidates = data.get("candidates", [])
+                    if not candidates:
+                        return ""
+                    parts = candidates[0].get("content", {}).get("parts", [])
+                    return "".join(part.get("text", "") for part in parts)
+                elif resp.status_code in (503, 404, 429):
+                    logger.warning(f"Gemini {context_label} model {model_name} returned status {resp.status_code}. Trying fallback...")
+                    last_error = f"{model_name}: {resp.status_code} - {resp.text}"
+                    continue
+                else:
+                    resp.raise_for_status()
+            except httpx.HTTPStatusError as e:
+                logger.error(f"Gemini {context_label} HTTP client error for {model_name}: {e}")
+                raise RuntimeError(f"Error communicating with Google Gemini {context_label}: {e}") from e
+            except httpx.TimeoutException:
+                logger.warning(f"Gemini {context_label} model {model_name} timed out. Trying fallback...")
+                last_error = f"{model_name} timed out"
+                continue
+            except Exception as e:
+                logger.warning(f"Gemini {context_label} request failed for {model_name}: {e}. Trying fallback...")
+                last_error = str(e)
+                continue
+
+        logger.error(f"All Gemini candidate {context_label} models failed: {last_error}")
+        raise RuntimeError(f"Error communicating with Google Gemini: {last_error}")
 
     def generate(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         self._ensure_api_key()
@@ -71,41 +116,7 @@ class GeminiAdapter(ILLMProvider):
             payload["systemInstruction"] = {
                 "parts": [{"text": system_prompt}]
             }
-
-        last_error = None
-        for model_name in self._candidate_models():
-            url = f"{self.BASE_URL}/{model_name}:generateContent"
-            try:
-                resp = httpx.post(
-                    url,
-                    json=payload,
-                    headers=self._auth_headers(),
-                    timeout=self.timeout_seconds,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if not candidates:
-                        return ""
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    return "".join(part.get("text", "") for part in parts)
-                elif resp.status_code in (503, 404, 429):
-                    logger.warning(f"Gemini model {model_name} returned status {resp.status_code}. Trying fallback...")
-                    last_error = f"{model_name}: {resp.status_code} - {resp.text}"
-                    continue
-                else:
-                    resp.raise_for_status()
-            except httpx.TimeoutException:
-                logger.warning(f"Gemini model {model_name} timed out. Trying fallback...")
-                last_error = f"{model_name} timed out"
-                continue
-            except Exception as e:
-                logger.warning(f"Gemini request failed for {model_name}: {e}. Trying fallback...")
-                last_error = str(e)
-                continue
-
-        logger.error(f"All Gemini candidate models failed: {last_error}")
-        raise RuntimeError(f"Error communicating with Google Gemini: {last_error}")
+        return self._post_with_fallback(payload, context_label="generate")
 
     def chat_with_meeting(
         self,
@@ -141,38 +152,4 @@ class GeminiAdapter(ILLMProvider):
             },
             "contents": contents,
         }
-
-        last_error = None
-        for model_name in self._candidate_models():
-            url = f"{self.BASE_URL}/{model_name}:generateContent"
-            try:
-                resp = httpx.post(
-                    url,
-                    json=payload,
-                    headers=self._auth_headers(),
-                    timeout=self.timeout_seconds,
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    candidates = data.get("candidates", [])
-                    if not candidates:
-                        return ""
-                    parts = candidates[0].get("content", {}).get("parts", [])
-                    return "".join(part.get("text", "") for part in parts)
-                elif resp.status_code in (503, 404, 429):
-                    logger.warning(f"Gemini chat model {model_name} returned status {resp.status_code}. Trying fallback...")
-                    last_error = f"{model_name}: {resp.status_code} - {resp.text}"
-                    continue
-                else:
-                    resp.raise_for_status()
-            except httpx.TimeoutException:
-                logger.warning(f"Gemini chat model {model_name} timed out. Trying fallback...")
-                last_error = f"{model_name} timed out"
-                continue
-            except Exception as e:
-                logger.warning(f"Gemini chat request failed for {model_name}: {e}. Trying fallback...")
-                last_error = str(e)
-                continue
-
-        logger.error(f"All Gemini candidate chat models failed: {last_error}")
-        raise RuntimeError(f"Error communicating with Google Gemini chat: {last_error}")
+        return self._post_with_fallback(payload, context_label="chat")

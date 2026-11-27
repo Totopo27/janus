@@ -148,3 +148,89 @@ def test_fts5_search_handles_special_characters_gracefully(repo):
 
     res3 = repo.search_turns('')
     assert res3 == []
+
+
+def test_save_turn_upsert_does_not_create_duplicate_fts5_rows(repo):
+    speaker_a = SpeakerProfile(speaker_id="spk_1", name="Carlos", native_language="es")
+    speaker_b = SpeakerProfile(speaker_id="spk_2", name="Alice", native_language="en")
+    repo.save_meeting(Meeting(meeting_id="m_upsert", title="Upsert", speaker_a=speaker_a, speaker_b=speaker_b))
+
+    repo.save_turn(
+        "m_upsert",
+        ConversationTurn(
+            turn_id="t_dup",
+            session_id="m_upsert",
+            speaker_id="spk_1",
+            original_transcription=TranscriptionResult("arquitectura original", "es"),
+            translation=TranslationResult("arquitectura original", "es", "original architecture", "en"),
+        ),
+    )
+    repo.save_turn(
+        "m_upsert",
+        ConversationTurn(
+            turn_id="t_dup",
+            session_id="m_upsert",
+            speaker_id="spk_2",
+            original_transcription=TranscriptionResult("arquitectura actualizada", "es"),
+            translation=TranslationResult("arquitectura actualizada", "es", "updated architecture", "en"),
+        ),
+    )
+
+    assert repo.search_turns("original") == []
+    updated_results = repo.search_turns("actualizada")
+    assert len(updated_results) == 1
+    assert updated_results[0].speaker_id == "spk_2"
+
+    import sqlite3
+    with sqlite3.connect(repo.db_path) as conn:
+        fts_count = conn.execute("SELECT COUNT(*) FROM turns_fts WHERE turn_id = 't_dup'").fetchone()[0]
+    assert fts_count == 1
+
+
+def test_search_turns_escapes_like_wildcards_in_topic_key(repo):
+    speaker_a = SpeakerProfile(speaker_id="spk_1", name="Carlos", native_language="es")
+    speaker_b = SpeakerProfile(speaker_id="spk_2", name="Alice", native_language="en")
+    repo.save_meeting(
+        Meeting(
+            meeting_id="m_alpha",
+            title="Alpha",
+            speaker_a=speaker_a,
+            speaker_b=speaker_b,
+            topic_key="proyecto/alpha",
+        )
+    )
+    repo.save_meeting(
+        Meeting(
+            meeting_id="m_beta",
+            title="Beta",
+            speaker_a=speaker_a,
+            speaker_b=speaker_b,
+            topic_key="otro/beta",
+        )
+    )
+    repo.save_turn(
+        "m_alpha",
+        ConversationTurn(
+            turn_id="t_a",
+            session_id="m_alpha",
+            speaker_id="spk_1",
+            original_transcription=TranscriptionResult("deploy alfa", "es"),
+            translation=TranslationResult("deploy alfa", "es", "deploy alpha", "en"),
+        ),
+    )
+    repo.save_turn(
+        "m_beta",
+        ConversationTurn(
+            turn_id="t_b",
+            session_id="m_beta",
+            speaker_id="spk_1",
+            original_transcription=TranscriptionResult("deploy beta", "es"),
+            translation=TranslationResult("deploy beta", "es", "deploy beta", "en"),
+        ),
+    )
+
+    assert repo.search_turns("deploy", topic_key="%") == []
+    proj_hits = repo.search_turns("deploy", topic_key="proyecto")
+    assert len(proj_hits) == 1
+    assert proj_hits[0].meeting_id == "m_alpha"
+
