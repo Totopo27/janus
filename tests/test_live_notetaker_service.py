@@ -1,8 +1,11 @@
+import asyncio
 import json
 import pytest
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 from janus.domain.models import (
+    AudioChunk,
     Meeting,
+    Session,
     SpeakerProfile,
     ConversationTurn,
     TranscriptionResult,
@@ -12,7 +15,11 @@ from janus.domain.models import (
 )
 from janus.adapters.storage.sqlite_repository import SqliteMeetingRepository
 from janus.adapters.llm.mock_llm_adapter import MockLLMAdapter
+from janus.adapters.stt.mock_stt_adapter import MockSpeechRecognizer
+from janus.adapters.translation.mock_translator import MockTranslator
+from janus.adapters.tts.mock_tts_adapter import MockSpeechSynthesizer
 from janus.services.live_notetaker_service import LiveNotetakerService
+from janus.services.pipeline_orchestrator import PipelineOrchestrator
 
 
 @pytest.fixture
@@ -24,7 +31,7 @@ def repo(tmp_path):
 @pytest.fixture
 def broadcaster():
     b = MagicMock()
-    b.broadcast = MagicMock()
+    b.broadcast_event = MagicMock()
     return b
 
 
@@ -69,7 +76,7 @@ def test_live_notetaker_triggers_on_batch_size(repo, broadcaster):
     repo.save_turn("meet_live_1", turn1)
     notes1 = service.process_turn("meet_live_1", turn1)
     assert notes1 is None  # Not yet triggered (batch_size=2)
-    assert broadcaster.broadcast.call_count == 0
+    assert broadcaster.broadcast_event.call_count == 0
 
     # 2nd turn
     turn2 = ConversationTurn(
@@ -120,3 +127,60 @@ def test_live_notetaker_catch_up(repo):
 
     recap = service.catch_up("meet_catch_up", last_n_turns=3)
     assert "Carlos y Alice" in recap
+
+
+@pytest.mark.asyncio
+async def test_pipeline_orchestrator_broadcasts_live_notes_event(tmp_path):
+    db_file = str(tmp_path / "test_bg_live_notes.db")
+    repo = SqliteMeetingRepository(db_path=db_file)
+    meeting = Meeting(
+        meeting_id="meet_bg_live",
+        title="Reunión Background",
+        speaker_a=SpeakerProfile("carlos", "Carlos", "es"),
+        speaker_b=SpeakerProfile("alice", "Alice", "en"),
+    )
+    repo.save_meeting(meeting)
+
+    llm_json = json.dumps({
+        "current_topic": "Sincronización en vivo",
+        "key_takeaways": ["El broadcaster debe recibir eventos desde tareas en background"],
+        "action_items": [{"assignee": "Carlos", "task": "Verificar flujo async", "due_hint": "Hoy"}],
+    })
+    async_broadcaster = MagicMock()
+    async_broadcaster.broadcast_event = AsyncMock()
+
+    live_notetaker = LiveNotetakerService(
+        repository=repo,
+        llm_provider=MockLLMAdapter(default_response=llm_json),
+        broadcaster=async_broadcaster,
+        batch_size=1,
+    )
+
+    orchestrator = PipelineOrchestrator(
+        stt_engine=MockSpeechRecognizer(predefined_text="Necesitamos sincronizar en vivo", language="es"),
+        translation_engine=MockTranslator({"Necesitamos sincronizar en vivo": "We need to sync live"}),
+        tts_engine=MockSpeechSynthesizer(),
+        broadcaster=async_broadcaster,
+        storage_repo=repo,
+        live_notetaker=live_notetaker,
+    )
+
+    session = Session(
+        session_id="meet_bg_live",
+        speaker_a=meeting.speaker_a,
+        speaker_b=meeting.speaker_b,
+    )
+    chunk = AudioChunk(data=b"\x00\x01" * 1600, sample_rate=16000)
+
+    await orchestrator.process_turn(session, "carlos", chunk)
+    if orchestrator._background_tasks:
+        await asyncio.gather(*list(orchestrator._background_tasks))
+
+    live_notes_calls = [
+        call for call in async_broadcaster.broadcast_event.await_args_list
+        if call.args[1].event_name == "LiveNotesUpdated"
+    ]
+    assert len(live_notes_calls) == 1
+    assert live_notes_calls[0].args[0] == "meet_bg_live"
+    assert live_notes_calls[0].args[1].current_topic == "Sincronización en vivo"
+

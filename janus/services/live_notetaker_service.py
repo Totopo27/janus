@@ -1,8 +1,11 @@
+import asyncio
+import inspect
 import json
 import logging
 import re
+import threading
 import time
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Tuple
 from janus.domain.models import LiveMeetingNotes, ActionItem, ConversationTurn
 from janus.domain.events import LiveNotesUpdatedEvent
 from janus.ports.storage_port import IMeetingRepository
@@ -32,12 +35,23 @@ class LiveNotetakerService:
         self.batch_size = batch_size
         self._cache: Dict[str, LiveMeetingNotes] = {}
         self._pending_turns_count: Dict[str, int] = {}
+        self._lock = threading.RLock()
 
     def get_live_notes(self, meeting_id: str) -> LiveMeetingNotes:
         """Returns the current live notes for a meeting, creating a default state if empty."""
-        if meeting_id not in self._cache:
-            self._cache[meeting_id] = LiveMeetingNotes(meeting_id=meeting_id)
-        return self._cache[meeting_id]
+        with self._lock:
+            if meeting_id not in self._cache:
+                self._cache[meeting_id] = LiveMeetingNotes(meeting_id=meeting_id)
+            return self._cache[meeting_id]
+
+    def _record_pending_turn(self, meeting_id: str) -> bool:
+        with self._lock:
+            count = self._pending_turns_count.get(meeting_id, 0) + 1
+            if count >= self.batch_size:
+                self._pending_turns_count[meeting_id] = 0
+                return True
+            self._pending_turns_count[meeting_id] = count
+            return False
 
     def process_turn(
         self,
@@ -48,20 +62,39 @@ class LiveNotetakerService:
         Receives a newly completed conversation turn. When batch_size turns have
         accumulated, triggers incremental AI reasoning and emits a live notes update.
         """
-        count = self._pending_turns_count.get(meeting_id, 0) + 1
-        self._pending_turns_count[meeting_id] = count
-
-        if count >= self.batch_size:
-            return self.update_notes(meeting_id)
+        if self._record_pending_turn(meeting_id):
+            return self.update_notes(meeting_id, _reset_pending=False)
         return None
 
-    def update_notes(self, meeting_id: str) -> LiveMeetingNotes:
-        """Forces an immediate synthesis update of live notes using all conversation turns so far."""
+    async def process_turn_async(
+        self,
+        meeting_id: str,
+        turn: ConversationTurn,
+    ) -> Optional[LiveMeetingNotes]:
+        """Async variant of process_turn that keeps WebSocket broadcasts on the caller's event loop."""
+        if self._record_pending_turn(meeting_id):
+            return await self.update_notes_async(meeting_id, _reset_pending=False)
+        return None
+
+    def _synthesize_notes(
+        self,
+        meeting_id: str,
+        reset_pending: bool = True,
+    ) -> Tuple[LiveMeetingNotes, Optional[LiveNotesUpdatedEvent]]:
+        """Runs synchronous repository/LLM live-notes synthesis and prepares an optional broadcast event."""
+        if reset_pending:
+            with self._lock:
+                self._pending_turns_count[meeting_id] = 0
+
         meeting = self.repository.get_meeting(meeting_id)
         if not meeting or not meeting.turns:
-            return self.get_live_notes(meeting_id)
+            return self.get_live_notes(meeting_id), None
 
-        current_notes = self.get_live_notes(meeting_id)
+        with self._lock:
+            current_notes = self.get_live_notes(meeting_id)
+            prev_topic = current_notes.current_topic
+            prev_takeaways_count = len(current_notes.key_takeaways)
+
         recent_turns = meeting.turns[-10:]  # Context of up to the last 10 turns
 
         dialogue_text = "\n".join([
@@ -86,72 +119,95 @@ class LiveNotetakerService:
 
         user_prompt = (
             f"Notas previas:\n"
-            f"- Tema actual: {current_notes.current_topic}\n"
-            f"- Puntos acumulados: {len(current_notes.key_takeaways)}\n\n"
+            f"- Tema actual: {prev_topic}\n"
+            f"- Puntos acumulados: {prev_takeaways_count}\n\n"
             f"Últimos turnos de la reunión:\n<meeting_dialogue>\n{dialogue_text}\n</meeting_dialogue>\n\n"
             "Actualiza las notas ejecutivas, el tema en curso y los nuevos compromisos detectados en formato JSON:"
         )
 
+        event: Optional[LiveNotesUpdatedEvent] = None
         try:
             raw_response = self.llm_provider.generate(prompt=user_prompt, system_prompt=system_prompt)
             parsed_data = self._parse_json_response(raw_response)
 
             if parsed_data:
-                if parsed_data.get("current_topic"):
-                    current_notes.current_topic = parsed_data["current_topic"]
+                with self._lock:
+                    if parsed_data.get("current_topic"):
+                        current_notes.current_topic = parsed_data["current_topic"]
 
-                # Merge new takeaways without exact duplicate strings
-                for pt in parsed_data.get("key_takeaways", []):
-                    if pt and pt not in current_notes.key_takeaways:
-                        current_notes.key_takeaways.append(pt)
+                    # Merge new takeaways without exact duplicate strings
+                    for pt in parsed_data.get("key_takeaways", []):
+                        if pt and pt not in current_notes.key_takeaways:
+                            current_notes.key_takeaways.append(pt)
 
-                # Merge action items
-                for itm in parsed_data.get("action_items", []):
-                    if isinstance(itm, dict) and itm.get("task"):
-                        action_item = ActionItem(
-                            assignee=itm.get("assignee", "Participante"),
-                            task=itm.get("task", ""),
-                            due_hint=itm.get("due_hint"),
+                    # Merge action items
+                    for itm in parsed_data.get("action_items", []):
+                        if isinstance(itm, dict) and itm.get("task"):
+                            action_item = ActionItem(
+                                assignee=itm.get("assignee", "Participante"),
+                                task=itm.get("task", ""),
+                                due_hint=itm.get("due_hint"),
+                            )
+                            # Check duplicate
+                            if not any(a.task.lower() == action_item.task.lower() for a in current_notes.action_items):
+                                current_notes.action_items.append(action_item)
+
+                    current_notes.updated_at = time.time()
+                    current_notes.last_processed_turn_index = len(meeting.turns)
+
+                    if self.broadcaster:
+                        event = LiveNotesUpdatedEvent(
+                            meeting_id=meeting_id,
+                            current_topic=current_notes.current_topic,
+                            key_takeaways=list(current_notes.key_takeaways),
+                            action_items=[
+                                {
+                                    "assignee": a.assignee,
+                                    "task": a.task,
+                                    "due_hint": a.due_hint,
+                                    "completed": a.completed,
+                                }
+                                for a in current_notes.action_items
+                            ],
                         )
-                        # Check duplicate
-                        if not any(a.task.lower() == action_item.task.lower() for a in current_notes.action_items):
-                            current_notes.action_items.append(action_item)
-
-                current_notes.updated_at = time.time()
-                current_notes.last_processed_turn_index = len(meeting.turns)
-
-                # Broadcast live event to all connected WebSockets
-                if self.broadcaster:
-                    event = LiveNotesUpdatedEvent(
-                        meeting_id=meeting_id,
-                        current_topic=current_notes.current_topic,
-                        key_takeaways=current_notes.key_takeaways,
-                        action_items=[
-                            {
-                                "assignee": a.assignee,
-                                "task": a.task,
-                                "due_hint": a.due_hint,
-                                "completed": a.completed,
-                            }
-                            for a in current_notes.action_items
-                        ],
-                    )
-                    try:
-                        import asyncio
-                        coro = self.broadcaster.broadcast_event(meeting_id, event)
-                        try:
-                            loop = asyncio.get_running_loop()
-                            loop.create_task(coro)
-                        except RuntimeError:
-                            # No running loop (e.g. sync test execution)
-                            coro.close()
-                    except Exception as broadcast_err:
-                        logger.warning("Live notes broadcast failed: %s", broadcast_err)
 
         except Exception as e:
             logger.error("Failed to update live notes with LLM: %s", e)
 
-        self._pending_turns_count[meeting_id] = 0
+        return current_notes, event
+
+    def update_notes(self, meeting_id: str, _reset_pending: bool = True) -> LiveMeetingNotes:
+        """Forces an immediate synthesis update of live notes using all conversation turns so far."""
+        current_notes, event = self._synthesize_notes(meeting_id, reset_pending=_reset_pending)
+        if event and self.broadcaster:
+            try:
+                maybe_coro = self.broadcaster.broadcast_event(meeting_id, event)
+                if inspect.isawaitable(maybe_coro):
+                    try:
+                        loop = asyncio.get_running_loop()
+                        loop.create_task(maybe_coro)
+                    except RuntimeError:
+                        # No running loop (e.g. sync test execution)
+                        if inspect.iscoroutine(maybe_coro):
+                            maybe_coro.close()
+            except Exception as broadcast_err:
+                logger.warning("Live notes broadcast failed: %s", broadcast_err)
+        return current_notes
+
+    async def update_notes_async(self, meeting_id: str, _reset_pending: bool = True) -> LiveMeetingNotes:
+        """Async variant of update_notes that awaits WebSocket broadcast on the active event loop."""
+        current_notes, event = await asyncio.to_thread(
+            self._synthesize_notes,
+            meeting_id,
+            _reset_pending,
+        )
+        if event and self.broadcaster:
+            try:
+                maybe_coro = self.broadcaster.broadcast_event(meeting_id, event)
+                if inspect.isawaitable(maybe_coro):
+                    await maybe_coro
+            except Exception as broadcast_err:
+                logger.warning("Live notes broadcast failed: %s", broadcast_err)
         return current_notes
 
     def catch_up(self, meeting_id: str, last_n_turns: int = 6) -> str:

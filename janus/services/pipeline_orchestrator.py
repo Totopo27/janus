@@ -1,4 +1,5 @@
 import asyncio
+import inspect
 import logging
 import uuid
 from typing import Optional, Any
@@ -59,6 +60,15 @@ class PipelineOrchestrator:
         self.segmenter = segmenter
         self.fusion_service = fusion_service
         self.enable_vad_slicing = enable_vad_slicing
+        self._background_tasks: set[asyncio.Task] = set()
+
+    def _on_background_task_done(self, task: asyncio.Task) -> None:
+        self._background_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.warning("Background live-notetaker task failed: %s", exc, exc_info=exc)
 
     async def process_turn(
         self,
@@ -182,15 +192,21 @@ class PipelineOrchestrator:
                     logger.info(f"[{session.session_id}] Acoustic Diarization resolved speaker: {effective_speaker_id} ({diar_name})")
 
         # Identify current speaker and counterpart flexibly
-        if effective_speaker_id in ["speaker_2", "remote"]:
-            current_speaker = session.speaker_b
-            counterpart = session.speaker_a
-        else:
-            current_speaker = session.speaker_a
-            counterpart = session.speaker_b
+        current_speaker = session.get_speaker(effective_speaker_id)
+        counterpart = session.get_counterpart(effective_speaker_id)
+
+        if current_speaker is None:
+            if effective_speaker_id in ["speaker_2", "remote"]:
+                current_speaker = session.speaker_b
+                counterpart = session.speaker_a
+            elif effective_speaker_id in ["speaker_1", "local", ""]:
+                current_speaker = session.speaker_a
+                counterpart = session.speaker_b
+            else:
+                counterpart = session.speaker_b
 
         if not effective_speaker_name:
-            effective_speaker_name = current_speaker.name
+            effective_speaker_name = current_speaker.name if current_speaker else effective_speaker_id
 
         # 3. Automatic Speech Recognition (with optional explicit language conditioning)
         if self.broadcaster:
@@ -351,9 +367,14 @@ class PipelineOrchestrator:
             # 7. Notify Live Notetaker in background
             if self.live_notetaker:
                 try:
-                    asyncio.get_running_loop().create_task(
-                        asyncio.to_thread(self.live_notetaker.process_turn, session.session_id, turn)
-                    )
+                    process_turn_async = getattr(self.live_notetaker, "process_turn_async", None)
+                    if callable(process_turn_async) and inspect.iscoroutinefunction(process_turn_async):
+                        coro = process_turn_async(session.session_id, turn)
+                    else:
+                        coro = asyncio.to_thread(self.live_notetaker.process_turn, session.session_id, turn)
+                    task = asyncio.create_task(coro)
+                    self._background_tasks.add(task)
+                    task.add_done_callback(self._on_background_task_done)
                 except Exception as e:
                     logger.debug(f"Live notetaker background dispatch skipped: {e}")
 
